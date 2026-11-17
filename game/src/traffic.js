@@ -1,0 +1,4 @@
+import * as THREE from 'three';
+import { makeCar } from './world.js';
+export function createTraffic(scene) { const cars = []; const colors = [0xdc644b, 0xe5c05a, 0x4f8bb2, 0xf2eee0, 0x6baf91]; for (let i = 0; i < 12; i++) { const car = makeCar(colors[i % colors.length]); car.position.set(i % 2 ? -66 : 66, 0, -72 + i * 12); car.userData.axis = i % 2 ? 'z' : 'x'; car.userData.speed = 5 + (i % 3); scene.add(car); cars.push(car); } return cars; }
+export function updateTraffic(cars, dt, player) { for (const car of cars) { if (car.userData.axis === 'z') car.position.z += car.userData.speed * dt; else car.position.x += car.userData.speed * dt; if (car.position.x > 82) car.position.x = -82; if (car.position.z > 82) car.position.z = -82; if (Math.hypot(car.position.x - player.position.x, car.position.z - player.position.z) < 5) car.userData.speed = 2; else car.userData.speed = 5; } }

@@ -1,61 +1,11 @@
-// Every tuning number and colour in one place. The playfield is a fixed 1280x720 logical area;
-// the renderer scales it to the window, so no rule below depends on the screen size.
-
-export const FIELD = { width: 1280, height: 720, groundY: 664 };
-
-/** The simulation's fixed step, in seconds: 60 updates a second whatever the display's rate. */
-export const STEP = 1 / 60;
-
-export const PLAYER = {
-  width: 72,
-  height: 24,
-  speed: 560,
-  invulnerable: 1.5,
-};
-
-export const LIVES = 3;
-
-export const BLOCK = {
-  minWidth: 40,
-  maxWidth: 110,
-  height: 36,
-  speed: 240,
-  speedPerLevel: 30,
-  speedJitter: 90,
-  interval: 0.55,
-  intervalScale: 0.88,
-  minInterval: 0.14,
-  dodgePoints: 1,
-};
-
-export const COIN = {
-  size: 24,
-  speed: 190,
-  speedPerLevel: 14,
-  interval: 1.4,
-  intervalJitter: 0.8,
-  points: 10,
-};
-
-/** Seconds of play per level, and the last level: speeds and spawn rates stop growing there. */
-export const LEVEL = { seconds: 12, max: 12 };
-
-/** How many falling things can exist at once; the pool is allocated once, at boot. */
-export const POOL_SIZE = 64;
-
-export const PALETTE = {
-  backdrop: '#11141b',
-  sky: '#1b1f2a',
-  ground: '#2a3040',
-  player: '#4fc3f7',
-  block: '#e5534b',
-  coin: '#f2c94c',
-  panel: '#252b38',
-  text: '#eef1f5',
-  muted: '#8b93a3',
-};
-
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-
-/** Where the best score is kept between visits (this browser only). */
-export const BEST_KEY = 'block-dodger.best';
+import * as THREE from 'three';
+export const COLORS = { sky: 0x9dd8df, sand: 0xe9c88d, asphalt: 0x26333a, sidewalk: 0xb8a995, ocean: 0x2f9ab0, neon: 0xffd45c, police: 0x2d65b8 };
+export const CITY = { size: 150, road: 10, blocks: [-60, -30, 0, 30, 60], garage: new THREE.Vector3(-60, 0, 60), dock: new THREE.Vector3(60, 0, -60), lighthouse: new THREE.Vector3(60, 0, 60) };
+export const MISSIONS = [
+  { title: 'FIRST WHEELS', objective: 'STEAL A CAR AND REACH THE GARAGE', target: 'garage', heat: 1, reward: 600 },
+  { title: 'BAYFRONT DROP', objective: 'DELIVER THE PACKAGE TO THE NORTH PIER', target: 'pier', heat: 1, reward: 900 },
+  { title: 'HARBOR HEIST', objective: 'COLLECT 3 CRATES AT THE DOCKS', target: 'dock', heat: 2, reward: 1400 },
+  { title: 'THE GETAWAY', objective: 'LOSE THE 3-STAR HEAT', target: 'hide', heat: 3, reward: 1800 },
+  { title: 'KING OF SOLARA', objective: 'REACH THE LIGHTHOUSE', target: 'lighthouse', heat: 4, reward: 3000 }
+];
+export const WAYPOINTS = { garage: new THREE.Vector3(-60, 0, 60), pier: new THREE.Vector3(-60, 0, -60), dock: new THREE.Vector3(60, 0, -60), lighthouse: new THREE.Vector3(60, 0, 60) };

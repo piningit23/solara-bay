@@ -1,124 +1,19 @@
-// The game's rules and state, with no drawing and no browser in it: the player's paddle, the
-// pool of falling blocks and coins, spawning, collisions, score, lives and level. step() advances
-// one fixed step and returns what happened as bit flags, so the caller can react without the
-// world knowing about screens or sound. Nothing here allocates after createWorld returns.
-import { BLOCK, COIN, FIELD, LEVEL, LIVES, PLAYER, POOL_SIZE } from './config.js';
+import * as THREE from 'three';
+import { CITY, COLORS } from './config.js';
+import { seeded, pick } from './random.js';
 
-export const KIND_BLOCK = 0;
-export const KIND_COIN = 1;
-
-export const EVENT_HIT = 1;
-export const EVENT_COIN = 2;
-export const EVENT_OVER = 4;
-
-function overlaps(a, b) {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+function mesh(geometry, color, y = 0) { const object = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .82 })); object.position.y = y; return object; }
+function box(scene, x, z, w, h, d, color) { const object = mesh(new THREE.BoxGeometry(w, h, d), color, h / 2); object.position.x = x; object.position.z = z; scene.add(object); return object; }
+export function buildCity(scene) {
+  scene.background = new THREE.Color(COLORS.sky); scene.fog = new THREE.Fog(COLORS.sky, 75, 210);
+  scene.add(new THREE.HemisphereLight(0xfff2c5, 0x3b6670, 2.3)); const sun = new THREE.DirectionalLight(0xffe2a5, 3); sun.position.set(-60, 100, 40); scene.add(sun);
+  scene.add(mesh(new THREE.PlaneGeometry(220, 220), COLORS.sand)); scene.children.at(-1).rotation.x = -Math.PI / 2;
+  box(scene, 0, -96, 220, 1, 30, COLORS.ocean); box(scene, 0, 82, 220, .5, 7, 0xd7c37d);
+  for (const x of CITY.blocks) { box(scene, x, 0, 7, .14, 150, COLORS.asphalt); box(scene, 0, x, 150, .14, 7, COLORS.asphalt); }
+  const random = seeded(22); const facade = [0xf07861, 0xe0b65b, 0x71a8aa, 0xc57b91, 0x7890a5, 0xe2d4a5];
+  for (const x of [-75, -45, -15, 15, 45, 75]) for (const z of [-75, -45, -15, 15, 45, 75]) { if (Math.abs(x) > 68 || Math.abs(z) > 68) continue; const h = 5 + random() * 13; box(scene, x + (random() - .5) * 8, z + (random() - .5) * 8, 16 + random() * 7, h, 16 + random() * 7, pick(random, facade)); }
+  for (let i = 0; i < 24; i++) { const x = -82 + (i % 8) * 23; const z = i < 8 ? 68 : i < 16 ? -68 : -82 + (i - 16) * 23; const trunk = box(scene, x, z, 1, 5, 1, 0x805832); const crown = mesh(new THREE.ConeGeometry(3.5, 8, 7), 0x2d805c, 9); crown.position.x = x; crown.position.z = z; scene.add(crown); } 
+  const sign = box(scene, -60, 60, 16, 5, 2, COLORS.neon); sign.material.emissive.setHex(0x7b4800); return scene;
 }
-
-export function createWorld(random) {
-  const player = { x: 0, y: FIELD.groundY - PLAYER.height, width: PLAYER.width, height: PLAYER.height, invulnerable: 0 };
-  const items = [];
-  for (let index = 0; index < POOL_SIZE; index += 1) {
-    items.push({ active: false, kind: KIND_BLOCK, x: 0, y: 0, width: 0, height: 0, speed: 0 });
-  }
-  const state = { player, items, score: 0, lives: LIVES, level: 1, elapsed: 0, blockTimer: 0, coinTimer: 0 };
-
-  function reset() {
-    player.x = (FIELD.width - player.width) / 2;
-    player.invulnerable = 0;
-    for (const item of items) item.active = false;
-    state.score = 0;
-    state.lives = LIVES;
-    state.level = 1;
-    state.elapsed = 0;
-    state.blockTimer = BLOCK.interval;
-    state.coinTimer = COIN.interval;
-  }
-
-  function freeItem() {
-    for (let index = 0; index < items.length; index += 1) if (!items[index].active) return items[index];
-    return null;
-  }
-
-  function spawnBlock() {
-    const item = freeItem();
-    if (item === null) return;
-    item.active = true;
-    item.kind = KIND_BLOCK;
-    item.width = BLOCK.minWidth + random() * (BLOCK.maxWidth - BLOCK.minWidth);
-    item.height = BLOCK.height;
-    item.x = random() * (FIELD.width - item.width);
-    item.y = -item.height;
-    item.speed = BLOCK.speed + BLOCK.speedPerLevel * (state.level - 1) + random() * BLOCK.speedJitter;
-  }
-
-  function spawnCoin() {
-    const item = freeItem();
-    if (item === null) return;
-    item.active = true;
-    item.kind = KIND_COIN;
-    item.width = COIN.size;
-    item.height = COIN.size;
-    item.x = random() * (FIELD.width - item.width);
-    item.y = -item.height;
-    item.speed = COIN.speed + COIN.speedPerLevel * (state.level - 1);
-  }
-
-  function blockInterval() {
-    return Math.max(BLOCK.minInterval, BLOCK.interval * BLOCK.intervalScale ** (state.level - 1));
-  }
-
-  /**
-   * One fixed step. `direction` is -1, 0 or 1 (left, still, right). With `harmless` set (the title
-   * screen's backdrop) things fall but nothing touches the player and nothing scores.
-   */
-  function step(dt, direction, harmless) {
-    let events = 0;
-    state.elapsed += dt;
-    state.level = Math.min(LEVEL.max, 1 + Math.floor(state.elapsed / LEVEL.seconds));
-
-    player.x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * dt));
-    if (player.invulnerable > 0) player.invulnerable = Math.max(0, player.invulnerable - dt);
-
-    state.blockTimer -= dt;
-    if (state.blockTimer <= 0) {
-      spawnBlock();
-      state.blockTimer += blockInterval();
-    }
-    state.coinTimer -= dt;
-    if (state.coinTimer <= 0) {
-      spawnCoin();
-      state.coinTimer += COIN.interval + random() * COIN.intervalJitter;
-    }
-
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      if (!item.active) continue;
-      item.y += item.speed * dt;
-      if (item.y > FIELD.groundY) {
-        item.active = false;
-        if (item.kind === KIND_BLOCK && !harmless) state.score += BLOCK.dodgePoints;
-        continue;
-      }
-      if (harmless || !overlaps(item, player)) continue;
-      if (item.kind === KIND_COIN) {
-        item.active = false;
-        state.score += COIN.points;
-        events |= EVENT_COIN;
-      } else if (player.invulnerable === 0) {
-        item.active = false;
-        state.lives -= 1;
-        player.invulnerable = PLAYER.invulnerable;
-        events |= EVENT_HIT;
-        if (state.lives === 0) {
-          events |= EVENT_OVER;
-          break;
-        }
-      }
-    }
-    return events;
-  }
-
-  reset();
-  return { state, reset, step };
-}
+export function makeCar(color = 0xd95842, police = false) { const group = new THREE.Group(); const body = mesh(new THREE.BoxGeometry(4.2, 1.1, 7), color, 1.1); group.add(body); const roof = mesh(new THREE.BoxGeometry(3.3, 1.1, 3.3), police ? 0xedf3f0 : 0x263b43, 2.1); roof.position.z = -.3; group.add(roof); for (const x of [-2, 2]) for (const z of [-2.3, 2.3]) { const wheel = mesh(new THREE.CylinderGeometry(.65, .65, .35, 12), 0x111518, .65); wheel.rotation.z = Math.PI / 2; wheel.position.x = x; wheel.position.z = z; group.add(wheel); } if (police) { const light = mesh(new THREE.BoxGeometry(1.5, .35, .5), 0xef544f, 2.8); group.add(light); } return group; }
+export function distance(a, b) { return Math.hypot(a.x - b.x, a.z - b.z); }

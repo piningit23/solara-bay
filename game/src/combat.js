@@ -1,0 +1,2 @@
+import * as THREE from 'three';
+export function createWeapon(scene) { const sparks = []; return { fire(player, audio, onCrime) { audio.gun(); onCrime(); const flash = new THREE.PointLight(0xffc36a, 9, 13); flash.position.copy(player.position).add(new THREE.Vector3(0, 2, -2)); scene.add(flash); sparks.push({ flash, life: .08 }); }, update(dt) { for (const spark of sparks.splice(0)) { spark.life -= dt; if (spark.life <= 0) scene.remove(spark.flash); else sparks.push(spark); } } }; }
