@@ -1,19 +1,157 @@
 import * as THREE from 'three';
-import { CITY, COLORS } from './config.js';
-import { seeded, pick } from './random.js';
+import { box, cylinder, label } from './render.js';
+import { between, pick, random } from './random.js';
+import { ROADS, LANDMARKS } from './config.js';
 
-function mesh(geometry, color, y = 0) { const object = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: .82 })); object.position.y = y; return object; }
-function box(scene, x, z, w, h, d, color) { const object = mesh(new THREE.BoxGeometry(w, h, d), color, h / 2); object.position.x = x; object.position.z = z; scene.add(object); return object; }
-export function buildCity(scene) {
-  scene.background = new THREE.Color(COLORS.sky); scene.fog = new THREE.Fog(COLORS.sky, 75, 210);
-  scene.add(new THREE.HemisphereLight(0xfff2c5, 0x3b6670, 2.3)); const sun = new THREE.DirectionalLight(0xffe2a5, 3); sun.position.set(-60, 100, 40); scene.add(sun);
-  scene.add(mesh(new THREE.PlaneGeometry(220, 220), COLORS.sand)); scene.children.at(-1).rotation.x = -Math.PI / 2;
-  box(scene, 0, -96, 220, 1, 30, COLORS.ocean); box(scene, 0, 82, 220, .5, 7, 0xd7c37d);
-  for (const x of CITY.blocks) { box(scene, x, 0, 7, .14, 150, COLORS.asphalt); box(scene, 0, x, 150, .14, 7, COLORS.asphalt); }
-  const random = seeded(22); const facade = [0xf07861, 0xe0b65b, 0x71a8aa, 0xc57b91, 0x7890a5, 0xe2d4a5];
-  for (const x of [-75, -45, -15, 15, 45, 75]) for (const z of [-75, -45, -15, 15, 45, 75]) { if (Math.abs(x) > 68 || Math.abs(z) > 68) continue; const h = 5 + random() * 13; box(scene, x + (random() - .5) * 8, z + (random() - .5) * 8, 16 + random() * 7, h, 16 + random() * 7, pick(random, facade)); }
-  for (let i = 0; i < 24; i++) { const x = -82 + (i % 8) * 23; const z = i < 8 ? 68 : i < 16 ? -68 : -82 + (i - 16) * 23; const trunk = box(scene, x, z, 1, 5, 1, 0x805832); const crown = mesh(new THREE.ConeGeometry(3.5, 8, 7), 0x2d805c, 9); crown.position.x = x; crown.position.z = z; scene.add(crown); } 
-  const sign = box(scene, -60, 60, 16, 5, 2, COLORS.neon); sign.material.emissive.setHex(0x7b4800); return scene;
+export function buildCoastalCity(scene) {
+  const obstacles = [];
+  box(scene, 0, -.8, 0, 350, 1.2, 350, '#b6bb9c');
+  box(scene, 260, -1.1, 0, 185, .5, 650, '#299fae');
+  box(scene, 180, -.5, 0, 30, .6, 350, '#efd39b');
+  box(scene, 162, 0, 0, 9, .5, 350, '#f0dfbb');
+  for (let z = -165; z < 170; z += 12) {
+    box(scene, 169, .5, z, .3, 1, 6, '#f9ecc7');
+    box(scene, 169, .9, z, .3, .12, 12, '#f9ecc7');
+    box(scene, 234, -.77, z, 85, .02, .35, '#a9e1d5');
+  }
+  for (const road of ROADS) {
+    box(scene, road, -.05, 0, 19, .2, 340, '#46585c');
+    box(scene, 0, -.04, road, 340, .2, 19, '#46585c');
+    for (let along = -163; along < 165; along += 9) {
+      if (ROADS.every(cross => Math.abs(along - cross) > 12)) {
+        box(scene, road, .08, along, .18, .03, 4, '#f7d47d');
+        box(scene, along, .09, road, 4, .03, .18, '#f7d47d');
+      }
+    }
+    for (const cross of ROADS) {
+      for (let stripe = -6; stripe <= 6; stripe += 2) {
+        box(scene, road + stripe, .1, cross + 11, .95, .04, 3, '#eee8ce');
+        box(scene, road + 11, .1, cross + stripe, 3, .04, .95, '#eee8ce');
+      }
+    }
+  }
+  const colors = ['#eed6aa', '#f1a68c', '#b7d5bd', '#e6c778', '#a1c8d0', '#dbbdc6', '#e5e1ca'];
+  for (let x = -96; x <= 96; x += 64) {
+    for (let z = -96; z <= 96; z += 64) {
+      box(scene, x, .05, z, 44, .45, 44, '#d7cdb6');
+      if (x === -32 && z === 32) continue;
+      for (const dx of [-11, 11]) {
+        for (const dz of [-11, 11]) {
+          const height = between(8, 26) + (z < -50 ? between(0, 16) : 0);
+          const bx = x + dx;
+          const bz = z + dz;
+          const width = between(15, 18);
+          const depth = between(15, 18);
+          box(scene, bx, height / 2, bz, width, height, depth, pick(colors));
+          box(scene, bx, height + .3, bz, width + .6, .6, depth + .6, '#fff0d0');
+          box(scene, bx + 2, height + 1.2, bz, 4, 1.6, 3, '#9faaa1');
+          obstacles.push({ x: bx, z: bz, w: width / 2 + .8, d: depth / 2 + .8 });
+          for (let floor = 3; floor < height - 1; floor += 4.2) {
+            for (const offset of [-5, 0, 5]) {
+              box(scene, bx + offset, floor, bz + depth / 2 + .03, 2.1, 1.7, .08, '#39717e');
+              box(scene, bx + offset, floor, bz - depth / 2 - .03, 2.1, 1.7, .08, '#39717e');
+            }
+            box(scene, bx + width / 2 + .03, floor, bz, .08, 1.7, 2.1, '#39717e');
+            box(scene, bx - width / 2 - .03, floor, bz, .08, 1.7, 2.1, '#39717e');
+          }
+          if (random() > .5) {
+            box(scene, bx, 2.6, bz + depth / 2 + 1, width - 2, .3, 2.6, pick(['#f07860', '#6aafab', '#f6c565']));
+          }
+        }
+      }
+    }
+  }
+  buildGarage(scene);
+  buildHarbor(scene);
+  buildLighthouse(scene);
+  label(scene, 'SOLARA BAY', 21, 20, -18, 21);
+  label(scene, 'PALM HOTEL', -85, 29, 13, 14, '#ffdd9b', '#b86863');
+  label(scene, 'BAY MARKET', 86, 8, 13, 13);
+  label(scene, 'SUNSET DINER', -85, 7, 77, 14, '#fff5dc', '#cd795b');
+  for (const road of ROADS) {
+    for (let t = -150; t < 155; t += 31) {
+      if (ROADS.every(c => Math.abs(t - c) > 15)) {
+        palm(scene, road + 13, t);
+        if (random() > .4) palm(scene, t, road - 14);
+        lamp(scene, road - 12, t);
+        box(scene, road + 13, .8, t + 7, 1.2, 1.6, 1.2, '#427e77');
+        box(scene, road + 14, .65, t - 5, 1.1, .2, 3.8, '#b67b54');
+        box(scene, road + 14, 1.25, t - 6.5, 1.1, 1.1, .16, '#b67b54');
+      }
+    }
+  }
+  for (let z = -155; z <= 155; z += 24) {
+    palm(scene, 158, z);
+    const umbrella = new THREE.Mesh(new THREE.ConeGeometry(3.3, 1.1, 9), new THREE.MeshStandardMaterial({ color: pick(['#ee9978', '#f5e5b5', '#73baba']) }));
+    umbrella.position.set(183, 3.2, z);
+    scene.add(umbrella);
+    cylinder(scene, 183, 1.5, z, .1, 3, '#e3d6ab');
+    box(scene, 181, .2, z + 3, 1.5, .25, 3.5, '#fcf0d3');
+  }
+  for (let i = 0; i < 12; i++) {
+    const cloud = box(scene, between(-220, 220), between(85, 110), between(-230, -170), between(15, 35), 2, 5, '#eef3de');
+    cloud.castShadow = false;
+  }
+  return {
+    obstacles,
+    blocked(x, z, radius = .7) {
+      return Math.abs(x) > 204 || Math.abs(z) > 169 || obstacles.some(o => Math.abs(x - o.x) < o.w + radius && Math.abs(z - o.z) < o.d + radius);
+    },
+  };
 }
-export function makeCar(color = 0xd95842, police = false) { const group = new THREE.Group(); const body = mesh(new THREE.BoxGeometry(4.2, 1.1, 7), color, 1.1); group.add(body); const roof = mesh(new THREE.BoxGeometry(3.3, 1.1, 3.3), police ? 0xedf3f0 : 0x263b43, 2.1); roof.position.z = -.3; group.add(roof); for (const x of [-2, 2]) for (const z of [-2.3, 2.3]) { const wheel = mesh(new THREE.CylinderGeometry(.65, .65, .35, 12), 0x111518, .65); wheel.rotation.z = Math.PI / 2; wheel.position.x = x; wheel.position.z = z; group.add(wheel); } if (police) { const light = mesh(new THREE.BoxGeometry(1.5, .35, .5), 0xef544f, 2.8); group.add(light); } return group; }
-export function distance(a, b) { return Math.hypot(a.x - b.x, a.z - b.z); }
+
+function palm(scene, x, z) {
+  const height = between(8, 12);
+  const trunk = cylinder(scene, x, height / 2, z, .36, height, '#9c7f56', .23);
+  trunk.rotation.z = .07;
+  for (let i = 0; i < 7; i++) {
+    const angle = i * Math.PI * 2 / 7;
+    const leaf = box(scene, x + Math.sin(angle) * 2.2, height, z + Math.cos(angle) * 2.2, 1.2, .23, 6, i % 2 ? '#478f68' : '#32785b');
+    leaf.rotation.y = angle;
+    leaf.rotation.x = .2;
+    leaf.rotation.z = Math.sin(angle) * .15;
+  }
+}
+
+function lamp(scene, x, z) {
+  cylinder(scene, x, 3.7, z, .13, 7.4, '#52686b');
+  box(scene, x + 1, 7.4, z, 2.2, .15, .18, '#52686b');
+  box(scene, x + 1.9, 7.3, z, .8, .18, .6, '#fff4b9');
+}
+
+function buildGarage(scene) {
+  box(scene, -42, 3, 27, 25, 6, 23, '#549c95');
+  box(scene, -42, 6.2, 27, 26, .5, 24, '#f3d9a5');
+  box(scene, -42, 2.3, 39, 17, 4.6, .2, '#274f5a');
+  label(scene, 'VALE AUTO / LAY LOW', -42, 5, 39.2, 21);
+  box(scene, -47, .05, 46, 22, .1, 11, '#778a7c');
+  label(scene, 'SAFEHOUSE', -47, 2, 47, 6, '#bff7c9');
+}
+
+function buildHarbor(scene) {
+  box(scene, 133, .1, 147, 72, .8, 40, '#a4a896');
+  for (let i = 0; i < 6; i++) {
+    const x = 105 + (i % 3) * 16;
+    const z = 148 + Math.floor(i / 3) * 10;
+    box(scene, x, 2.4, z, 13, 4.5, 7, pick(['#ba6757', '#3c8290', '#d2a44d']));
+    for (let rib = -5; rib < 6; rib += 2) box(scene, x + rib, 2.4, z - 3.55, .13, 4.4, .13, '#e0ba8e');
+  }
+  for (let x = 145; x <= 165; x += 20) {
+    box(scene, x, 12, 153, 1.2, 24, 1.2, '#d6ab54');
+    box(scene, x - 7, 24, 153, 20, 1.1, 1.1, '#d6ab54');
+    box(scene, x - 15, 18, 153, .15, 12, .15, '#46595b');
+  }
+  label(scene, 'PORT SOLARA', 119, 10, 146, 24);
+  box(scene, 189, .7, 144, 13, 3, 32, '#e9e6cd');
+  box(scene, 189, 3.5, 140, 10, 3, 13, '#f6e7c9');
+}
+
+function buildLighthouse(scene) {
+  box(scene, 180, -.1, -148, 48, 1, 30, '#d5cba5');
+  cylinder(scene, 192, 10, -148, 3.5, 20, '#fff0d1', 2.5);
+  cylinder(scene, 192, 11, -148, 3.4, 4, '#d97763', 3.1);
+  cylinder(scene, 192, 21.5, -148, 3.8, 2, '#304d59');
+  cylinder(scene, 192, 24, -148, 2.7, 3, '#ffdc83');
+  cylinder(scene, 192, 26, -148, 3.8, 1, '#b96353', 0);
+  label(scene, 'SOLARA POINT', 185, 5, -135, 16);
+}

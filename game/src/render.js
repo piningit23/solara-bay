@@ -1,141 +1,115 @@
-// Drawing only: the world's state and the current screen in, pixels out. The 1280x720 playfield
-// is scaled to fit the window and centred, the margin filled with the backdrop colour. Flat
-// rectangles and circles, canvas text for the HUD and the panels. Text that holds a number is
-// rebuilt only when the number changes, so a frame allocates nothing.
-import { FIELD, FONT, LIVES, PALETTE } from './config.js';
-import { KIND_COIN } from './world.js';
+import * as THREE from 'three';
 
-export const SCREEN_TITLE = 'title';
-export const SCREEN_PLAY = 'play';
-export const SCREEN_PAUSED = 'paused';
-export const SCREEN_OVER = 'over';
-
-/** The panel's width; its height grows with its lines: room for the title, the lines and the prompt. */
-const PANEL = { width: 600, top: 134, line: 34, bottom: 70 };
-const LIFE_SIZE = 20;
-const LIFE_GAP = 8;
-
-function cachedLabel(prefix) {
-  let value = -1;
-  let text = '';
-  return function label(next) {
-    if (next !== value) {
-      value = next;
-      text = prefix + next;
-    }
-    return text;
-  };
+export function createRenderer() {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.3;
+  document.querySelector('#game').append(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color('#85cad0');
+  scene.fog = new THREE.Fog('#b8d7d2', 100, 390);
+  scene.add(new THREE.HemisphereLight('#e2f9ff', '#a67b59', 2.4));
+  const sun = new THREE.DirectionalLight('#ffe0aa', 3.4);
+  sun.position.set(-90, 160, -60);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -160, right: 160, top: 160, bottom: -160, far: 450 });
+  sun.shadow.bias = -.001;
+  scene.add(sun);
+  const camera = new THREE.PerspectiveCamera(57, innerWidth / innerHeight, .2, 700);
+  window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+  return { renderer, scene, camera };
 }
 
-export function createRenderer(canvas) {
+const materials = new Map();
+export function material(color) {
+  if (!materials.has(color)) materials.set(color, new THREE.MeshStandardMaterial({ color, roughness: .78 }));
+  return materials.get(color);
+}
+export function box(parent, x, y, z, width, height, depth, color) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material(color));
+  mesh.position.set(x, y, z);
+  mesh.castShadow = height > 1;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+export function cylinder(parent, x, y, z, radius, height, color, top = radius) {
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(top, radius, height, 9), material(color));
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+export function label(parent, text, x, y, z, width = 12, color = '#ffe2a1', background = '#164957') {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
   const context = canvas.getContext('2d');
-  const view = { scale: 1, x: 0, y: 0 };
-  const scoreLabel = cachedLabel('Score ');
-  const levelLabel = cachedLabel('Level ');
-  const finalLabel = cachedLabel('Score ');
-  const bestLabel = cachedLabel('Best ');
+  context.fillStyle = background;
+  context.fillRect(0, 0, 512, 128);
+  context.strokeStyle = color;
+  context.lineWidth = 7;
+  context.strokeRect(8, 8, 496, 112);
+  context.font = 'bold 49px Arial';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillStyle = color;
+  context.fillText(text, 256, 66, 470);
+  const texture = new THREE.CanvasTexture(canvas);
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, width / 4), new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide }));
+  mesh.position.set(x, y, z);
+  parent.add(mesh);
+  return mesh;
+}
 
-  function resize() {
-    const ratio = window.devicePixelRatio || 1;
-    const width = Math.round(window.innerWidth * ratio);
-    const height = Math.round(window.innerHeight * ratio);
-    canvas.width = width;
-    canvas.height = height;
-    view.scale = Math.min(width / FIELD.width, height / FIELD.height);
-    view.x = (width - FIELD.width * view.scale) / 2;
-    view.y = (height - FIELD.height * view.scale) / 2;
-  }
+export function createPerson(color = '#f47752', officer = false) {
+  const group = new THREE.Group();
+  box(group, 0, 1.45, 0, .85, 1.05, .48, color);
+  cylinder(group, 0, 2.24, 0, .29, .5, '#b87950');
+  box(group, 0, 2.49, -.02, .6, .18, .54, officer ? '#132e49' : '#352a2a');
+  const legs = [-.23, .23].map(x => box(group, x, .5, 0, .3, 1, .35, '#233e54'));
+  box(group, -.58, 1.4, 0, .25, .9, .28, '#b87950');
+  box(group, .58, 1.55, .25, .25, .7, .28, '#b87950');
+  if (officer) box(group, .18, 1.7, .26, .15, .18, .03, '#ffd675');
+  group.userData.legs = legs;
+  return group;
+}
 
-  const fonts = new Map();
-  function text(value, x, y, size, color, align) {
-    if (!fonts.has(size)) fonts.set(size, `${size}px ${FONT}`);
-    context.font = fonts.get(size);
-    context.fillStyle = color;
-    context.textAlign = align;
-    context.fillText(value, x, y);
-  }
-
-  function drawField(state) {
-    context.fillStyle = PALETTE.sky;
-    context.fillRect(0, 0, FIELD.width, FIELD.height);
-    context.fillStyle = PALETTE.ground;
-    context.fillRect(0, FIELD.groundY, FIELD.width, FIELD.height - FIELD.groundY);
-
-    const items = state.items;
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      if (!item.active) continue;
-      if (item.kind === KIND_COIN) {
-        context.fillStyle = PALETTE.coin;
-        context.beginPath();
-        context.arc(item.x + item.width / 2, item.y + item.height / 2, item.width / 2, 0, Math.PI * 2);
-        context.fill();
-      } else {
-        context.fillStyle = PALETTE.block;
-        context.fillRect(item.x, item.y, item.width, item.height);
-      }
+export function createCar(color, model = 0, police = false) {
+  const group = new THREE.Group();
+  const length = model === 1 ? 6 : 5.2;
+  box(group, 0, .95, 0, 2.55, .95, length, police ? '#f0f3df' : color);
+  box(group, 0, 1.4, .1, 2.4, .2, length - .3, police ? '#173044' : color);
+  box(group, 0, 1.95, -.25, 2.05, 1.05, model === 1 ? 3.3 : 2.55, '#244655');
+  box(group, 0, 2.48, -.25, 2.12, .14, model === 1 ? 3.4 : 2.65, police ? '#f3f2dd' : color);
+  for (const x of [-1.32, 1.32]) {
+    for (const z of [-1.65, 1.65]) {
+      const wheel = cylinder(group, x, .65, z, .6, .35, '#182b32');
+      wheel.rotation.z = Math.PI / 2;
+      const hub = cylinder(group, x * 1.02, .65, z, .3, .38, '#a5b9b7');
+      hub.rotation.z = Math.PI / 2;
     }
-
-    const player = state.player;
-    // Blink while invulnerable after a hit: hidden on every other tenth of a second.
-    if (player.invulnerable === 0 || Math.floor(player.invulnerable * 10) % 2 === 1) {
-      context.fillStyle = PALETTE.player;
-      context.fillRect(player.x, player.y, player.width, player.height);
-    }
+    box(group, x * .7, 1.06, length / 2 + .03, .55, .3, .09, '#fff2b1');
+    box(group, x * .7, 1.06, -length / 2 - .03, .55, .3, .09, '#ec634e');
   }
-
-  function drawHud(state) {
-    context.textBaseline = 'top';
-    text(scoreLabel(state.score), 24, 20, 28, PALETTE.text, 'left');
-    text(levelLabel(state.level), FIELD.width / 2, 20, 28, PALETTE.text, 'center');
-    const firstLife = FIELD.width - 24 - LIVES * (LIFE_SIZE + LIFE_GAP) + LIFE_GAP;
-    text('Lives', firstLife - 12, 20, 28, PALETTE.text, 'right');
-    for (let life = 0; life < LIVES; life += 1) {
-      context.fillStyle = life < state.lives ? PALETTE.player : PALETTE.ground;
-      context.fillRect(firstLife + life * (LIFE_SIZE + LIFE_GAP), 24, LIFE_SIZE, LIFE_SIZE);
-    }
+  box(group, 0, .65, length / 2 + .08, 2.3, .19, .16, '#bac9c1');
+  if (police) {
+    box(group, 0, 2.65, -.2, 1.6, .14, .48, '#172f43');
+    group.userData.red = box(group, -.5, 2.85, -.2, .6, .27, .4, '#ff464d');
+    group.userData.blue = box(group, .5, 2.85, -.2, .6, .27, .4, '#38adff');
+    label(group, 'POLICE', 0, 1.4, -length / 2 - .06, 1.8, '#163f52', '#e4eee2');
+  } else if (model === 2) {
+    box(group, 0, 1.6, -2.1, 2.7, .15, .5, color);
   }
-
-  function drawPanel(title, lines, prompt) {
-    const height = PANEL.top + lines.length * PANEL.line + PANEL.bottom;
-    const x = (FIELD.width - PANEL.width) / 2;
-    const y = (FIELD.height - height) / 2;
-    context.fillStyle = PALETTE.panel;
-    context.fillRect(x, y, PANEL.width, height);
-    context.textBaseline = 'alphabetic';
-    text(title, FIELD.width / 2, y + 78, 48, PALETTE.text, 'center');
-    for (let index = 0; index < lines.length; index += 1) {
-      text(lines[index], FIELD.width / 2, y + PANEL.top + index * PANEL.line, 22, PALETTE.muted, 'center');
-    }
-    text(prompt, FIELD.width / 2, y + height - 40, 24, PALETTE.coin, 'center');
-  }
-
-  const TITLE_LINES = ['Dodge the red blocks. Catch the gold coins.', 'Move with ← → or A D.  Pause with P.', ''];
-  const PAUSED_LINES = ['The blocks will wait for you.'];
-  const OVER_LINES = ['', ''];
-
-  /** Paint one frame: the field, then the HUD or a panel for the screen the game is on. */
-  function draw(state, screen, best) {
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.fillStyle = PALETTE.backdrop;
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.setTransform(view.scale, 0, 0, view.scale, view.x, view.y);
-    drawField(state);
-    if (screen === SCREEN_TITLE) {
-      TITLE_LINES[2] = bestLabel(best);
-      drawPanel('Block Dodger', TITLE_LINES, 'Press Space or click to start');
-      return;
-    }
-    drawHud(state);
-    if (screen === SCREEN_PAUSED) drawPanel('Paused', PAUSED_LINES, 'Press P to resume');
-    else if (screen === SCREEN_OVER) {
-      OVER_LINES[0] = finalLabel(state.score);
-      OVER_LINES[1] = bestLabel(best);
-      drawPanel('Game over', OVER_LINES, 'Press Space or click to play again');
-    }
-  }
-
-  resize();
-  window.addEventListener('resize', resize);
-  return { draw };
+  return group;
 }

@@ -2,22 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#133d47">
   <title>Solara Bay</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./src/style.css">
   <script type="importmap">{"imports":{"three":"./vendor/three/three.module.min.js"}}</script>
 </head>
 <body>
-  <canvas id="game"></canvas>
-  <div id="title" class="screen"><div class="title-card"><div class="eyebrow">SOLARA COUNTY // 1986</div><h1>SOLARA BAY</h1><p class="tagline">Sunlight, salt air, and one last score.</p><div class="menu-buttons"><button id="start">START RUN</button><button id="continue">CONTINUE</button></div><p class="controls">WASD move / drive &nbsp; SHIFT sprint &nbsp; E enter / exit &nbsp; CLICK fire &nbsp; R reload &nbsp; ESC pause</p></div></div>
-  <div id="pause" class="screen hidden"><div class="pause-card"><h2>PAUSED</h2><p id="pause-status">Solara Bay is waiting.</p><button id="resume">RESUME</button><button id="save">SAVE PROGRESS</button></div></div>
-  <div id="busted" class="screen hidden"><div class="pause-card"><div class="eyebrow">SIGNAL LOST</div><h2>BUSTED</h2><p>The bay remembers every mistake.</p><button id="retry">RETRY RUN</button></div></div>
-  <div id="ending" class="screen hidden"><div class="pause-card"><div class="eyebrow">SOLARA BAY // AFTERGLOW</div><h2>KING OF SOLARA</h2><p id="ending-text">The lighthouse beam sweeps across a city that finally knows your name.</p><button id="ending-replay">PLAY AGAIN</button></div></div>
-  <div id="hud" class="hidden">
-    <div class="hud-top"><div class="brand">SOLARA <span>BAY</span></div><div id="mission" class="mission">FIRST WHEELS <b>STEAL A CAR AND REACH THE GARAGE</b></div><div class="cash">$<span id="cash">1,250</span></div></div>
-    <div class="hud-bottom"><div class="stats"><div class="health"><span>HEALTH</span><div class="bar"><i id="health-bar"></i></div></div><div class="ammo"><span id="ammo">12</span> / 48 <small>AMMO</small></div><div id="speed" class="speed hidden">000 <small>KM/H</small></div></div><div class="wanted"><span>HEAT</span><div id="stars">☆☆☆☆☆</div></div><canvas id="minimap" width="180" height="180"></canvas></div>
-    <div id="toast"></div><div id="crosshair">+</div>
+  <div id="game"></div>
+  <div id="hud">
+    <header><div class="brand">SOLARA <b>BAY</b><small>FREE ROAM / STORY MODE</small></div><div id="stats"></div></header>
+    <section id="objective"><small id="chapter"></small><h2 id="mission"></h2><p id="story"></p><div id="target"></div></section>
+    <div id="toast"></div><div id="crosshair">+</div><div id="vignette"></div>
+    <section id="mapPanel"><div class="mapTitle">SOLARA BAY <span>LIVE GPS</span></div><canvas id="minimap" width="230" height="190"></canvas><div id="district">PALM QUARTER</div></section>
+    <section id="telemetry"><div id="vehicle"></div><div id="speed"></div><div id="weapon"></div><div id="health"><i></i></div></section>
+    <footer id="hint"></footer>
   </div>
+  <div id="menu" class="veil">
+    <div class="titleCopy"><div class="eyebrow">A CITY OF SUN. A LIFE ON THE RUN.</div><h1>SOLARA<br><span>BAY</span><i>✦</i></h1><p>Five jobs. One coastline. Your way out.</p><div class="rule"></div><p class="intro">Mara Vale owes the harbor syndicate one last favor.<br>Take the keys. Follow the coast. Own your escape.</p><button id="start">START A NEW STORY <span>→</span></button><button id="continue" class="secondary">CONTINUE SAVED GAME</button><div id="select"></div><div class="controls">WASD move / drive · SHIFT sprint · MOUSE look<br>E steal / exit · CLICK fire · R reload · SPACE brake · ESC pause</div></div>
+    <div class="postcard"><span>WELCOME TO</span><strong>THE SUNSHINE<br>UNDERWORLD.</strong><small>AN ORIGINAL OPEN WORLD<br>EXPLORE • DRIVE • SURVIVE</small></div>
+  </div>
+  <div id="pause" class="veil hidden"><div class="modal"><small>SOLARA BAY</small><h1>TAKE A BREATH.</h1><p>The city can wait.</p><button id="resume">RESUME →</button><button id="save" class="secondary">SAVE PROGRESS</button><p id="saved"></p></div></div>
+  <div id="result" class="veil hidden"><div class="modal"><small id="resultTag"></small><h1 id="resultTitle"></h1><p id="resultText"></p><button id="retry">BACK TO THE BAY →</button></div></div>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

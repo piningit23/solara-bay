@@ -1,31 +1,19 @@
-// Solara Bay entrypoint. This stays intentionally small: the browser game is a static tree,
-// while this Node 22 program copies that tree and builds the judge dossier deterministically.
-
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { cpSync, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-
-// Recreating the destination keeps repeated local verification byte-for-byte deterministic.
-mkdirSync(out, { recursive: true });
-cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
-mkdirSync(join(out, 'screenshots'), { recursive: true });
-if (existsSync(join(here, 'screenshots'))) cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
-
-// The scorer's own caps (reference/gate.json): only text_max_bytes shapes the bytes; the others refuse an entry the
-// scorer would refuse (more than 4 screenshots or one over 256 KiB; more than 993 files in game/ or 48 MiB of game
-// files, in all, or a path under game/ over 1000 bytes: game/ counts beside /output's own 1000-entry cap, its
-// screenshots/ and dossier.json).
-writeFileSync(
-  join(out, 'dossier.json'),
-  buildDossier(out, {
-    text_max_bytes: 163840,
-    screenshots: { max: 4, max_bytes: 262144 },
-    game_max_files: 993,
-    game_max_bytes: 50331648,
-    game_path_max_bytes: 1000,
-  }),
-);
+// Resolve all inputs from the checked-in entrypoint, not the caller's working directory.
+const root = fileURLToPath(new URL('.', import.meta.url));
+const destination = process.env.MAKEFUN_OUTPUT_DIR || '/output';
+mkdirSync(destination, { recursive: true });
+for (const folder of ['game', 'screenshots']) {
+  cpSync(join(root, folder), join(destination, folder), { recursive: true, force: true });
+}
+writeFileSync(join(destination, 'dossier.json'), buildDossier(destination, {
+  text_max_bytes: 163840,
+  screenshots: { max: 4, max_bytes: 262144 },
+  game_max_files: 993,
+  game_max_bytes: 50331648,
+}));
+console.log('Solara Bay packaged successfully.');

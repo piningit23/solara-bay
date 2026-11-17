@@ -1,3 +1,38 @@
-import * as THREE from 'three';
-export function createPlayer(scene) { const player = new THREE.Group(); const body = new THREE.Mesh(new THREE.CapsuleGeometry(.65, 1.3, 4, 8), new THREE.MeshStandardMaterial({ color: 0x172d35 })); body.position.y = 1.2; player.add(body); const shirt = new THREE.Mesh(new THREE.BoxGeometry(1.2, .55, .7), new THREE.MeshStandardMaterial({ color: 0xffd45c })); shirt.position.y = 1.35; player.add(shirt); player.position.set(0, 0, 38); player.userData.health = 100; player.userData.speed = 0; scene.add(player); return player; }
-export function updatePlayer(player, input, dt) { const speed = input.down('ShiftLeft') ? 15 : 8; const dx = (input.down('KeyD') ? 1 : 0) - (input.down('KeyA') ? 1 : 0); const dz = (input.down('KeyS') ? 1 : 0) - (input.down('KeyW') ? 1 : 0); player.position.x += dx * speed * dt; player.position.z += dz * speed * dt; player.position.x = Math.max(-86, Math.min(86, player.position.x)); player.position.z = Math.max(-86, Math.min(86, player.position.z)); player.userData.speed = Math.hypot(dx, dz) * speed; }
+import { createPerson } from './render.js';
+import { clamp, turnToward } from './config.js';
+
+export function createPlayer(scene) {
+  const mesh = createPerson('#ee885d');
+  mesh.position.set(-4, 0, 19);
+  scene.add(mesh);
+  return { mesh, x: -4, z: 19, heading: 0, health: 100, ammo: 12, reserve: 96, reload: 0 };
+}
+
+export function updateOnFoot(game, dt) {
+  const { player, input, world } = game;
+  if (game.car) {
+    player.x = game.car.x;
+    player.z = game.car.z;
+    player.mesh.visible = false;
+    return;
+  }
+  player.mesh.visible = true;
+  let x = Number(input.down('KeyD')) - Number(input.down('KeyA'));
+  let z = Number(input.down('KeyW')) - Number(input.down('KeyS'));
+  const length = Math.hypot(x, z);
+  if (length) {
+    x /= length;
+    z /= length;
+    const dx = x * Math.cos(game.cameraYaw) + z * Math.sin(game.cameraYaw);
+    const dz = z * Math.cos(game.cameraYaw) - x * Math.sin(game.cameraYaw);
+    const speed = input.down('ShiftLeft') ? 12 : 6;
+    if (!world.blocked(player.x + dx * speed * dt, player.z)) player.x += dx * speed * dt;
+    if (!world.blocked(player.x, player.z + dz * speed * dt)) player.z += dz * speed * dt;
+    player.heading = turnToward(player.heading, Math.atan2(dx, dz), dt * 12);
+    player.mesh.userData.legs.forEach((leg, i) => leg.rotation.x = Math.sin(game.time * speed * 1.8 + i * Math.PI) * .5);
+  }
+  player.x = clamp(player.x, -167, 200);
+  player.z = clamp(player.z, -167, 167);
+  player.mesh.position.set(player.x, 0, player.z);
+  player.mesh.rotation.y = player.heading;
+}
