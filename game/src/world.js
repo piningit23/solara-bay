@@ -1,157 +1,126 @@
 import * as THREE from 'three';
-import { box, cylinder, label } from './render.js';
-import { between, pick, random } from './random.js';
-import { ROADS, LANDMARKS } from './config.js';
+import { ROADS, randomSource, GARAGE } from './config.js';
+import { box, cylinder, label, material } from './models.js';
 
-export function buildCoastalCity(scene) {
-  const obstacles = [];
-  box(scene, 0, -.8, 0, 350, 1.2, 350, '#b6bb9c');
-  box(scene, 260, -1.1, 0, 185, .5, 650, '#299fae');
-  box(scene, 180, -.5, 0, 30, .6, 350, '#efd39b');
-  box(scene, 162, 0, 0, 9, .5, 350, '#f0dfbb');
-  for (let z = -165; z < 170; z += 12) {
-    box(scene, 169, .5, z, .3, 1, 6, '#f9ecc7');
-    box(scene, 169, .9, z, .3, .12, 12, '#f9ecc7');
-    box(scene, 234, -.77, z, 85, .02, .35, '#a9e1d5');
-  }
-  for (const road of ROADS) {
-    box(scene, road, -.05, 0, 19, .2, 340, '#46585c');
-    box(scene, 0, -.04, road, 340, .2, 19, '#46585c');
-    for (let along = -163; along < 165; along += 9) {
-      if (ROADS.every(cross => Math.abs(along - cross) > 12)) {
-        box(scene, road, .08, along, .18, .03, 4, '#f7d47d');
-        box(scene, along, .09, road, 4, .03, .18, '#f7d47d');
-      }
-    }
-    for (const cross of ROADS) {
-      for (let stripe = -6; stripe <= 6; stripe += 2) {
-        box(scene, road + stripe, .1, cross + 11, .95, .04, 3, '#eee8ce');
-        box(scene, road + 11, .1, cross + stripe, 3, .04, .95, '#eee8ce');
+export function buildIslandCity(scene) {
+  const random = randomSource();
+  const solids = [];
+  const water = box(scene, 0, -2.7, 0, 2400, 1, 2400, '#209da7', { roughness: .27, metalness: .3 });
+  box(scene, 0, -1.1, 0, 390, 2, 390, '#ead29b');
+  box(scene, 0, -.12, 0, 348, .2, 348, '#bfc1a9');
+  for (const axis of [0, 1]) {
+    for (const road of ROADS) {
+      box(scene, axis ? 0 : road, .015, axis ? road : 0, axis ? 365 : 18, .12, axis ? 18 : 365, '#475960');
+      for (const edge of [-10.1, 10.1]) box(scene, axis ? 0 : road + edge, .16, axis ? road + edge : 0, axis ? 363 : 1, .3, axis ? 1 : 363, '#f2ddba');
+      for (let k = -174; k <= 174; k += 9) {
+        if (ROADS.some(r => Math.abs(r - k) < 12)) continue;
+        box(scene, axis ? k : road, .09, axis ? road : k, axis ? 4.2 : .16, .02, axis ? .16 : 4.2, '#eedda2');
       }
     }
   }
-  const colors = ['#eed6aa', '#f1a68c', '#b7d5bd', '#e6c778', '#a1c8d0', '#dbbdc6', '#e5e1ca'];
-  for (let x = -96; x <= 96; x += 64) {
-    for (let z = -96; z <= 96; z += 64) {
-      box(scene, x, .05, z, 44, .45, 44, '#d7cdb6');
-      if (x === -32 && z === 32) continue;
-      for (const dx of [-11, 11]) {
-        for (const dz of [-11, 11]) {
-          const height = between(8, 26) + (z < -50 ? between(0, 16) : 0);
-          const bx = x + dx;
-          const bz = z + dz;
-          const width = between(15, 18);
-          const depth = between(15, 18);
-          box(scene, bx, height / 2, bz, width, height, depth, pick(colors));
-          box(scene, bx, height + .3, bz, width + .6, .6, depth + .6, '#fff0d0');
-          box(scene, bx + 2, height + 1.2, bz, 4, 1.6, 3, '#9faaa1');
-          obstacles.push({ x: bx, z: bz, w: width / 2 + .8, d: depth / 2 + .8 });
-          for (let floor = 3; floor < height - 1; floor += 4.2) {
-            for (const offset of [-5, 0, 5]) {
-              box(scene, bx + offset, floor, bz + depth / 2 + .03, 2.1, 1.7, .08, '#39717e');
-              box(scene, bx + offset, floor, bz - depth / 2 - .03, 2.1, 1.7, .08, '#39717e');
+  const palette = ['#edbfa2', '#f3d6b0', '#92c3bb', '#d78c78', '#c4d7c4', '#ebd2bd', '#b5b8c5'];
+  for (let ix = 0; ix < 4; ix++) {
+    for (let iz = 0; iz < 4; iz++) {
+      const cx = -108 + ix * 72;
+      const cz = -108 + iz * 72;
+      for (const dx of [-16, 15]) for (const dz of [-16, 16]) {
+        const x = cx + dx;
+        const z = cz + dz;
+        const height = 7 + random() * 19 + (ix === 1 && iz === 1 ? 15 : 0);
+        const w = 20 + random() * 4;
+        const d = 20 + random() * 4;
+        const col = palette[Math.floor(random() * palette.length)];
+        box(scene, x, height / 2, z, w, height, d, col);
+        box(scene, x, height + .3, z, w + .9, .7, d + .9, '#f4dfbd');
+        box(scene, x + 3, height + 1, z - 4, 5, 1.6, 4, '#749297');
+        solids.push({ x, z, w: w / 2 + .5, d: d / 2 + .5 });
+        for (let y = 3; y < height - 1; y += 3.6) {
+          for (let n = -1; n <= 1; n++) {
+            for (const side of [-1, 1]) {
+              box(scene, x + n * 5.5, y, z + side * (d / 2 + .02), 2.6, 1.8, .06, '#315866', { metalness: .4 });
+              box(scene, x + side * (w / 2 + .02), y, z + n * 5.5, .06, 1.8, 2.6, '#315866');
             }
-            box(scene, bx + width / 2 + .03, floor, bz, .08, 1.7, 2.1, '#39717e');
-            box(scene, bx - width / 2 - .03, floor, bz, .08, 1.7, 2.1, '#39717e');
           }
-          if (random() > .5) {
-            box(scene, bx, 2.6, bz + depth / 2 + 1, width - 2, .3, 2.6, pick(['#f07860', '#6aafab', '#f6c565']));
-          }
+        }
+        if (random() > .45) {
+          box(scene, x, 2.5, z + d / 2 + 1.3, w * .85, .28, 2.8, random() > .5 ? '#dc795f' : '#407f7e');
+          label(scene, ['CAFÉ LUNA', 'SOLARA MOTEL', 'MERCADO', 'BAY RECORDS', 'MARINA CLUB'][Math.floor(random() * 5)], x, 4.7, z + d / 2 + .08, w * .8);
         }
       }
     }
   }
-  buildGarage(scene);
-  buildHarbor(scene);
-  buildLighthouse(scene);
-  label(scene, 'SOLARA BAY', 21, 20, -18, 21);
-  label(scene, 'PALM HOTEL', -85, 29, 13, 14, '#ffdd9b', '#b86863');
-  label(scene, 'BAY MARKET', 86, 8, 13, 13);
-  label(scene, 'SUNSET DINER', -85, 7, 77, 14, '#fff5dc', '#cd795b');
-  for (const road of ROADS) {
-    for (let t = -150; t < 155; t += 31) {
-      if (ROADS.every(c => Math.abs(t - c) > 15)) {
-        palm(scene, road + 13, t);
-        if (random() > .4) palm(scene, t, road - 14);
-        lamp(scene, road - 12, t);
-        box(scene, road + 13, .8, t + 7, 1.2, 1.6, 1.2, '#427e77');
-        box(scene, road + 14, .65, t - 5, 1.1, .2, 3.8, '#b67b54');
-        box(scene, road + 14, 1.25, t - 6.5, 1.1, 1.1, .16, '#b67b54');
-      }
+  function palm(x, z, height = 9) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+    cylinder(group, 0, height / 2, 0, .27, .47, height, '#a18458', 7);
+    for (let k = 0; k < 7; k++) {
+      const leaf = new THREE.Mesh(new THREE.ConeGeometry(1.3, 6.3, 4), material(k % 2 ? '#428d66' : '#65a575'));
+      leaf.position.set(Math.sin(k * .9) * 2, height, Math.cos(k * .9) * 2);
+      leaf.rotation.set(Math.cos(k * .9) * 1.1, k * .9, Math.sin(k * .9) * -1.1);
+      leaf.castShadow = true;
+      group.add(leaf);
     }
+    scene.add(group);
   }
-  for (let z = -155; z <= 155; z += 24) {
-    palm(scene, 158, z);
-    const umbrella = new THREE.Mesh(new THREE.ConeGeometry(3.3, 1.1, 9), new THREE.MeshStandardMaterial({ color: pick(['#ee9978', '#f5e5b5', '#73baba']) }));
-    umbrella.position.set(183, 3.2, z);
-    scene.add(umbrella);
-    cylinder(scene, 183, 1.5, z, .1, 3, '#e3d6ab');
-    box(scene, 181, .2, z + 3, 1.5, .25, 3.5, '#fcf0d3');
+  for (let n = -174; n <= 174; n += 22) {
+    for (const edge of [-174, 174]) { palm(edge, n, 8 + random() * 3); palm(n, edge, 8 + random() * 3); }
   }
-  for (let i = 0; i < 12; i++) {
-    const cloud = box(scene, between(-220, 220), between(85, 110), between(-230, -170), between(15, 35), 2, 5, '#eef3de');
-    cloud.castShadow = false;
+  for (const x of ROADS) for (let z = -165; z <= 165; z += 36) {
+    if (ROADS.some(r => Math.abs(r - z) < 13)) continue;
+    cylinder(scene, x + 11.6, 3, z, .1, .16, 6, '#496068', 6);
+    box(scene, x + 10.5, 6.1, z, 2.7, .2, .7, '#f5e4b4');
+    box(scene, x - 12.5, .65, z + 2, 1.8, 1.3, .75, '#516d62');
+    if (random() > .4) palm(x - 13, z - 7, 7);
   }
-  return {
-    obstacles,
-    blocked(x, z, radius = .7) {
-      return Math.abs(x) > 204 || Math.abs(z) > 169 || obstacles.some(o => Math.abs(x - o.x) < o.w + radius && Math.abs(z - o.z) < o.d + radius);
-    },
-  };
-}
-
-function palm(scene, x, z) {
-  const height = between(8, 12);
-  const trunk = cylinder(scene, x, height / 2, z, .36, height, '#9c7f56', .23);
-  trunk.rotation.z = .07;
-  for (let i = 0; i < 7; i++) {
-    const angle = i * Math.PI * 2 / 7;
-    const leaf = box(scene, x + Math.sin(angle) * 2.2, height, z + Math.cos(angle) * 2.2, 1.2, .23, 6, i % 2 ? '#478f68' : '#32785b');
-    leaf.rotation.y = angle;
-    leaf.rotation.x = .2;
-    leaf.rotation.z = Math.sin(angle) * .15;
+  // The west-side workshop is the safehouse and supplies shop.
+  box(scene, -165, 3.6, 74, 18, 7, 27, '#b9c6af');
+  box(scene, -155.9, 2, 74, .08, 4, 17, '#29464b');
+  const garageSign = label(scene, 'VALE AUTO / SAFEHOUSE', -155.8, 6, 74, 20, '#8ff0ca');
+  garageSign.rotation.y = Math.PI / 2;
+  box(scene, GARAGE.x, .11, GARAGE.z, 14, .05, 17, '#618878');
+  // Two bridges leave the island at the eastern and western ends.
+  for (const side of [-1, 1]) {
+    box(scene, side * 252, .3, 0, 133, .8, 17, '#6d8384');
+    for (const z of [-8.5, 8.5]) {
+      box(scene, side * 252, 1.2, z, 133, .7, .6, '#ead8b9');
+      for (let x = 195; x < 315; x += 24) cylinder(scene, side * x, -2, z, 1.2, 1.4, 8, '#7e9790');
+    }
+    box(scene, side * 365, -1.3, 0, 95, 2, 130, '#91ae83');
   }
-}
-
-function lamp(scene, x, z) {
-  cylinder(scene, x, 3.7, z, .13, 7.4, '#52686b');
-  box(scene, x + 1, 7.4, z, 2.2, .15, .18, '#52686b');
-  box(scene, x + 1.9, 7.3, z, .8, .18, .6, '#fff4b9');
-}
-
-function buildGarage(scene) {
-  box(scene, -42, 3, 27, 25, 6, 23, '#549c95');
-  box(scene, -42, 6.2, 27, 26, .5, 24, '#f3d9a5');
-  box(scene, -42, 2.3, 39, 17, 4.6, .2, '#274f5a');
-  label(scene, 'VALE AUTO / LAY LOW', -42, 5, 39.2, 21);
-  box(scene, -47, .05, 46, 22, .1, 11, '#778a7c');
-  label(scene, 'SAFEHOUSE', -47, 2, 47, 6, '#bff7c9');
-}
-
-function buildHarbor(scene) {
-  box(scene, 133, .1, 147, 72, .8, 40, '#a4a896');
-  for (let i = 0; i < 6; i++) {
-    const x = 105 + (i % 3) * 16;
-    const z = 148 + Math.floor(i / 3) * 10;
-    box(scene, x, 2.4, z, 13, 4.5, 7, pick(['#ba6757', '#3c8290', '#d2a44d']));
-    for (let rib = -5; rib < 6; rib += 2) box(scene, x + rib, 2.4, z - 3.55, .13, 4.4, .13, '#e0ba8e');
+  // Harbor boardwalk, stacked cargo, bollards and a working crane.
+  box(scene, 165, .05, -93, 36, .5, 96, '#a6a38b');
+  for (let z = -132; z < -50; z += 15) {
+    box(scene, 178, 1.6, z, 8, 3, 11, z % 2 ? '#d28052' : '#688e8d');
+    for (let k = -3; k <= 3; k++) box(scene, 182.1, 1.6, z + k, .1, 2.8, .13, '#e0b485');
+    cylinder(scene, 188, .6, z, .4, .5, 1, '#3f5660');
   }
-  for (let x = 145; x <= 165; x += 20) {
-    box(scene, x, 12, 153, 1.2, 24, 1.2, '#d6ab54');
-    box(scene, x - 7, 24, 153, 20, 1.1, 1.1, '#d6ab54');
-    box(scene, x - 15, 18, 153, .15, 12, .15, '#46595b');
+  box(scene, 184, 12, -133, 2, 24, 2, '#e4b452');
+  box(scene, 172, 24, -133, 31, 1.4, 1.8, '#e4b452');
+  cylinder(scene, 160, 18, -133, .08, .08, 12, '#344d58');
+  // A tall lighthouse anchors the northern skyline.
+  cylinder(scene, 0, 0, -180, 14, 17, 2, '#b0af91');
+  cylinder(scene, 0, 13, -180, 3.4, 5.2, 26, '#f5dfbd', 16);
+  cylinder(scene, 0, 17, -180, 3.8, 4.1, 4, '#d47462', 16);
+  cylinder(scene, 0, 27, -180, 5.6, 5.6, 1, '#214852', 16);
+  cylinder(scene, 0, 29.2, -180, 3.3, 3.3, 3.4, '#fbe8ab', 12);
+  cylinder(scene, 0, 32, -180, 0, 5, 3, '#d17b5e', 12);
+  label(scene, 'NORTH POINT', 0, 5, -173, 15);
+  // Sand, parasols, boats and a promenade make the island edge legible.
+  for (let z = 24; z < 160; z += 21) {
+    cylinder(scene, 184, 1.7, z, .08, .08, 3.4, '#ba9b71');
+    cylinder(scene, 184, 3.1, z, 0, 3.7, 1.5, z % 2 ? '#f3a47a' : '#75c0b7', 8);
+    box(scene, 181, .35, z + 4, 1.5, .4, 4.5, '#fbddae');
   }
-  label(scene, 'PORT SOLARA', 119, 10, 146, 24);
-  box(scene, 189, .7, 144, 13, 3, 32, '#e9e6cd');
-  box(scene, 189, 3.5, 140, 10, 3, 13, '#f6e7c9');
-}
-
-function buildLighthouse(scene) {
-  box(scene, 180, -.1, -148, 48, 1, 30, '#d5cba5');
-  cylinder(scene, 192, 10, -148, 3.5, 20, '#fff0d1', 2.5);
-  cylinder(scene, 192, 11, -148, 3.4, 4, '#d97763', 3.1);
-  cylinder(scene, 192, 21.5, -148, 3.8, 2, '#304d59');
-  cylinder(scene, 192, 24, -148, 2.7, 3, '#ffdc83');
-  cylinder(scene, 192, 26, -148, 3.8, 1, '#b96353', 0);
-  label(scene, 'SOLARA POINT', 185, 5, -135, 16);
+  for (const [x, z] of [[210, 50], [221, -90], [-220, 90]]) {
+    const boat = new THREE.Group();
+    box(boat, 0, -.3, 0, 4, 1.6, 11, '#f4e4c3');
+    box(boat, 0, .8, -1, 3.1, 1.2, 4, '#587e84');
+    cylinder(boat, 0, 5, 0, .09, .09, 10, '#d6c5a6');
+    boat.position.set(x, 0, z);
+    boat.rotation.y = .4;
+    scene.add(boat);
+  }
+  return { solids, water, collides(x, z, radius = 1) {
+    return solids.some(b => Math.abs(x - b.x) < b.w + radius && Math.abs(z - b.z) < b.d + radius);
+  } };
 }

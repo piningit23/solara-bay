@@ -1,87 +1,60 @@
-import { distance } from './config.js';
+import { distance, GARAGE } from './config.js';
+import { STATIONS } from './radio.js';
 
-export class GameHUD {
-  constructor() {
-    this.stats = document.querySelector('#stats');
-    this.mission = document.querySelector('#mission');
-    this.chapter = document.querySelector('#chapter');
-    this.story = document.querySelector('#story');
-    this.target = document.querySelector('#target');
-    this.speed = document.querySelector('#speed');
-    this.vehicle = document.querySelector('#vehicle');
-    this.weapon = document.querySelector('#weapon');
-    this.health = document.querySelector('#health i');
-    this.map = document.querySelector('#minimap');
-    this.context = this.map.getContext('2d');
-    this.toast = document.querySelector('#toast');
-    this.toastTime = 0;
+export function createHud(state) {
+  const root = document.querySelector('#hud');
+  const objective = document.querySelector('#objective');
+  const status = document.querySelector('#status');
+  const telemetry = document.querySelector('#telemetry');
+  const radio = document.querySelector('#radio');
+  const prompt = document.querySelector('#prompt');
+  const toast = document.querySelector('#toast');
+  const minimap = document.querySelector('#minimap');
+  const ctx = minimap.getContext('2d');
+  let toastTimer = 0;
+  function message(text) { toast.textContent = text; toastTimer = 3; }
+  function mapPoint(x, z) { return { x: 115 + x * .58, y: 115 + z * .58 }; }
+  function drawMap() {
+    ctx.fillStyle = '#123f47'; ctx.fillRect(0, 0, 230, 230);
+    ctx.fillStyle = '#36a2a1'; ctx.fillRect(3, 3, 224, 224);
+    ctx.fillStyle = '#b8b18d'; ctx.fillRect(14, 14, 202, 202);
+    ctx.strokeStyle = '#52656a'; ctx.lineWidth = 6;
+    for (let n = -144; n <= 144; n += 72) { const p = mapPoint(n, 0); ctx.beginPath(); ctx.moveTo(p.x, 14); ctx.lineTo(p.x, 216); ctx.stroke(); const q = mapPoint(0, n); ctx.beginPath(); ctx.moveTo(14, q.y); ctx.lineTo(216, q.y); ctx.stroke(); }
+    ctx.strokeStyle = '#f0d9a5'; ctx.lineWidth = 2;
+    for (let n = -144; n <= 144; n += 72) { const p = mapPoint(n, 0); ctx.beginPath(); ctx.moveTo(p.x - 5, 14); ctx.lineTo(p.x - 5, 216); ctx.stroke(); const q = mapPoint(0, n); ctx.beginPath(); ctx.moveTo(14, q.y - 5); ctx.lineTo(216, q.y - 5); ctx.stroke(); }
+    for (const car of state.driving.traffic) { const p = mapPoint(car.x, car.z); ctx.fillStyle = '#f1db84'; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); }
+    for (const car of state.police.cars) { const p = mapPoint(car.x, car.z); ctx.fillStyle = '#ff6153'; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill(); }
+    if (state.helicopter.active) { const p = mapPoint(state.helicopter.root.position.x, state.helicopter.root.position.z); ctx.fillStyle = '#ffe674'; ctx.font = 'bold 14px Arial'; ctx.fillText('H', p.x - 5, p.y + 5); }
+    const waypoint = state.missions.position(); if (waypoint) { const p = mapPoint(waypoint.x, waypoint.z); ctx.strokeStyle = '#f6ce72'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x, p.y, 7 + Math.sin(state.time * 5) * 2, 0, Math.PI * 2); ctx.stroke(); }
+    const player = state.player.car || state.player; const p = mapPoint(player.x, player.z); ctx.fillStyle = '#73f2c4'; ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill();
   }
-  update(game, dt) {
-    const stars = '★'.repeat(game.wanted) + `<span class="empty">${'★'.repeat(5 - game.wanted)}</span>`;
-    this.stats.innerHTML = `<div class="stars">${stars}</div><div class="cash">$${game.cash.toLocaleString()}</div><div class="heat">${game.wanted ? 'BAY PATROL SEARCHING' : 'COAST IS QUIET'}</div>`;
-    const mission = game.missions[game.missionIndex];
-    this.mission.textContent = mission?.title || 'CITY FREE ROAM';
-    this.chapter.textContent = mission ? `STORY ${String(game.missionIndex + 1).padStart(2, '0')} / 05 • ${mission.place}` : 'SOLARA BAY';
-    this.story.textContent = mission?.story || 'The city is open. Make your own way.';
-    this.target.innerHTML = mission ? `◆ ${mission.place} <span style="float:right">${Math.round(distance(game.player, mission.target))} M</span>` : '◆ FREE ROAM';
-    this.health.style.width = `${game.player.health}%`;
-    this.health.style.background = game.player.health < 35 ? '#ff5555' : '#96f0ba';
-    this.weapon.textContent = `▣  PISTOL   ${game.player.ammo} / ${game.player.reserve}${game.player.reload > 0 ? '  •  RELOADING' : ''}`;
-    this.vehicle.textContent = game.car ? `${game.car.model === 1 ? 'ORION ESTATE' : game.car.model === 2 ? 'CALYPSO GT' : 'MISTRAL COUPE'}  •  ${game.car.stolen ? 'HOT PLATES' : 'LOCAL VEHICLE'}` : 'ON FOOT  •  MARA VALE';
-    this.speed.innerHTML = game.car ? `${Math.round(Math.abs(game.car.speed) * 3.6)}<small> KM/H</small>` : `<span style="font-size:15px;letter-spacing:2px">VITALS ${Math.round(game.player.health)}%</span>`;
-    const p = game.player;
-    document.querySelector('#district').textContent = p.x > 154 ? p.z > 120 ? 'PORT SOLARA' : 'PALM BEACH' : p.z < -130 ? 'SOLARA POINT' : p.x < -100 ? 'OLD TOWN' : 'PALM QUARTER';
-    this.drawMap(game);
-    this.toastTime = Math.max(0, this.toastTime - dt);
-    if (!this.toastTime) this.toast.textContent = '';
+  function update(dt) {
+    root.hidden = false;
+    const mission = state.missions.current();
+    const waypoint = state.missions.position();
+    const p = state.player.car || state.player;
+    const d = waypoint ? Math.round(distance(p, waypoint)) : 0;
+    objective.innerHTML = `<div class="eyebrow">${String(state.missions.index + 1).padStart(2, '0')} / 08 &nbsp; ${mission.type.toUpperCase()}</div><h2>${mission.name}</h2><p>${mission.objective}</p><div class="distance">◎ ${d}M TO WAYPOINT ${mission.type === 'race' ? `· CP ${state.missions.checkpoint}/${state.missions.checkpointCount}` : ''}</div>`;
+    status.innerHTML = `<div class="stars">${'★'.repeat(state.wanted)}<span style="opacity:.2">${'★'.repeat(5 - state.wanted)}</span></div><div class="cash">$${state.player.cash.toLocaleString()}</div><div class="health"><i style="width:${state.player.health}%"></i></div><div class="micro">HEALTH ${Math.ceil(state.player.health)} / ARMOR ${Math.ceil(state.player.armor)}</div>`;
+    const weapon = ['PISTOL', 'SCATTERGUN', 'RAPID SMG'][state.player.weapon];
+    telemetry.innerHTML = state.player.car ? `<div class="speed">${Math.round(state.player.speed)}<small> KM/H</small></div><div class="micro">${state.player.car.health > 0 ? 'VEHICLE CONDITION' : 'DISABLED'}</div><div class="meter"><i style="width:${state.player.car.health}%"></i></div><div class="micro">NOS BOOST</div><div class="meter"><i style="width:${state.player.car.nos}%"></i></div>` : `<div class="weapon">${weapon}</div><div class="micro">AMMO ${state.player.ammo[state.player.weapon]} / ${[12, 6, 32][state.player.weapon]}</div><div class="meter"><i style="width:${state.player.ammo[state.player.weapon] / [12, 6, 32][state.player.weapon] * 100}%"></i></div>`;
+    radio.innerHTML = `<strong>◉ ${STATIONS[state.radio.index].name}</strong><small>${STATIONS[state.radio.index].song} &nbsp;·&nbsp; Q TUNE</small>`;
+    const atGarage = Math.hypot(p.x - GARAGE.x, p.z - GARAGE.z) < 20;
+    prompt.textContent = atGarage ? `F — SHOP &nbsp; · &nbsp; ${state.player.car ? 'E — EXIT' : 'E — ENTER VEHICLE'}` : state.player.car ? 'E — EXIT VEHICLE' : 'E — STEAL / ENTER VEHICLE';
+    drawMap();
+    toastTimer -= dt;
+    if (toastTimer <= 0) toast.textContent = '';
+    document.querySelector('#vignette').style.opacity = state.damageFlash * 1.6;
+    document.querySelector('#feedback').style.opacity = Math.min(1, state.feedbackTimer * 4);
   }
-  notify(text) {
-    this.toast.textContent = text;
-    this.toastTime = 2.6;
-  }
-  drawMap(game) {
-    const c = this.context;
-    c.clearRect(0, 0, 230, 190);
-    c.fillStyle = '#176270';
-    c.fillRect(0, 0, 230, 190);
-    const sx = 230 / 360;
-    const sy = 190 / 350;
-    const px = x => (x + 175) * sx;
-    const py = z => (z + 175) * sy;
-    c.fillStyle = '#e4cc91';
-    c.fillRect(px(155), 0, 12, 190);
-    c.fillStyle = '#4b5c5a';
-    for (const road of [-128, -64, 0, 64, 128]) {
-      c.fillRect(px(road) - 4, 0, 8, 190);
-      c.fillRect(0, py(road) - 3, 230, 6);
-    }
-    c.fillStyle = '#73816d';
-    for (const x of [-110, -45, 20, 85]) for (const z of [-110, -45, 20, 85]) c.fillRect(px(x) - 8, py(z) - 8, 16, 16);
-    c.fillStyle = '#ffd46e';
-    c.beginPath();
-    c.arc(px(-47), py(28), 3, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = '#ffe8a4';
-    c.beginPath();
-    c.arc(px(game.player.x), py(game.player.z), 4, 0, Math.PI * 2);
-    c.fill();
-    c.strokeStyle = '#ffe8a4';
-    c.lineWidth = 2;
-    c.beginPath();
-    c.moveTo(px(game.player.x), py(game.player.z));
-    c.lineTo(px(game.player.x + Math.sin(game.car?.heading || game.player.heading) * 7), py(game.player.z + Math.cos(game.car?.heading || game.player.heading) * 7));
-    c.stroke();
-    for (const car of game.cars) {
-      if (!car.traffic && !car.police && car !== game.car) continue;
-      c.fillStyle = car.police ? '#ff6362' : car === game.car ? '#ffe58b' : '#83c9c2';
-      c.fillRect(px(car.x) - 2, py(car.z) - 3, 4, 6);
-    }
-    const mission = game.missions[game.missionIndex];
-    if (mission) {
-      c.fillStyle = '#ffbd5e';
-      c.beginPath();
-      c.arc(px(mission.target.x), py(mission.target.z), 5, 0, Math.PI * 2);
-      c.fill();
-    }
-  }
+  return { update, message };
+}
+
+export function titleMenu(onStart, onContinue, onSelect) {
+  const menu = document.querySelector('#menu');
+  menu.innerHTML = `<div class="menu-content"><div class="title-kicker">MARA VALE PRESENTS</div><div class="title">SOLARA<span>BAY</span></div><div class="full-title">SOLARA BAY: island-city crime game — 8 story missions, 5-star police and helicopter chases, car radio, safehouse saves</div><div class="features"><div><b>08</b><small>STORY MISSIONS</small></div><div><b>05</b><small>HEAT LEVELS</small></div><div><b>03</b><small>RADIO STATIONS</small></div><div><b>∞</b><small>ISLAND NIGHTS</small></div></div><p class="story">A sunlit island. A harbor debt. Seven days to make Solara remember the name Mara Vale.</p><div class="buttons"><button class="primary" id="start">START NEW RUN</button><button id="continue">CONTINUE</button><button id="missions">MISSION SELECT</button></div><div class="key-guide"><b>CONTROLS</b> &nbsp; WASD move/drive · mouse orbit · Shift run/NOS · E enter/exit · click fire · 1/2/3 weapons · R reload · Q radio · Esc pause<br><b>V2 SYSTEMS</b> &nbsp; helicopter pursuit · flashing roadblocks · safehouse shop · synthesized radio · island ring race</div></div>`;
+  menu.querySelector('#start').onclick = () => { menu.innerHTML = ''; onStart(); };
+  menu.querySelector('#continue').onclick = () => { menu.innerHTML = ''; onContinue(); };
+  menu.querySelector('#missions').onclick = onSelect;
+  return menu;
 }

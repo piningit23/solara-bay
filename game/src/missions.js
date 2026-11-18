@@ -1,126 +1,82 @@
-import * as THREE from 'three';
-import { LANDMARKS, distance } from './config.js';
-import { box, label } from './render.js';
-import { createPerson } from './render.js';
+import { GARAGE, LIGHTHOUSE, distance } from './config.js';
 
-export function createStory(game) {
-  const marker = new THREE.Group();
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(3, .2, 8, 36), new THREE.MeshBasicMaterial({ color: '#ffd570' }));
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = .5;
-  marker.add(ring);
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(.3, 3, 12, 16, 1, true), new THREE.MeshBasicMaterial({ color: '#ffd570', transparent: true, opacity: .13, side: THREE.DoubleSide }));
-  beam.position.y = 6;
-  marker.add(beam);
-  game.scene.add(marker);
-  const missions = [
-    { title: 'FIRST WHEELS', story: 'Mara Vale has one night to settle her harbor debt. Take a car and reach the old garage.', place: 'VALE AUTO GARAGE', target: LANDMARKS.garage, type: 'steal', reward: 500 },
-    { title: 'BAYFRONT DROP', story: 'A sealed package needs to cross town. The Bay patrol already knows your borrowed plates.', place: 'BAYFRONT RENDEZVOUS', target: LANDMARKS.drop, type: 'drop', reward: 900 },
-    { title: 'HARBOR HEIST', story: 'Three ledgers are hidden in the container yard. The dock crew is armed and the sirens are close.', place: 'PORT SOLARA • CONTAINER YARD', target: LANDMARKS.harbor, type: 'crate', reward: 1500, crates: [] },
-    { title: 'THE GETAWAY', story: 'The whole coast is on alert. Break the chase, then make it back to the safehouse.', place: 'LOSE THE POLICE', target: LANDMARKS.garage, type: 'escape', reward: 2200 },
-    { title: 'KING OF SOLARA', story: 'One last run. Take the north road through the heat and reach the lighthouse above the bay.', place: 'SOLARA POINT LIGHTHOUSE', target: LANDMARKS.lighthouse, type: 'final', reward: 5000 },
-  ];
-  const crates = missions[2].crates;
-  for (let i = 0; i < 3; i++) {
-    const crate = box(game.scene, 103 + i * 14, 1, 137, 3.4, 2, 3.2, '#e0a950');
-    label(crate, `LEDGER 0${i + 1}`, 0, 0, 1.7, 2.6, '#fff0ba', '#694c37');
-    crate.visible = false;
-    crates.push(crate);
-  }
-  game.missions = missions;
-  game.marker = marker;
-  game.storyNPC = createPerson('#edb765');
-  game.storyNPC.position.set(-8, 0, 21);
-  game.scene.add(game.storyNPC);
-  game.enemies = [];
-  game.storyNPC.userData.label = label(game.storyNPC, 'MARA VALE', 0, 3, 0, 3);
-  game.missionIndex = 0;
-  game.cratesCollected = 0;
-  game.storyLoaded = false;
-  applySavedProgress(game);
-}
-
-function applySavedProgress(game) {
-  try {
-    const data = JSON.parse(localStorage.getItem('solara-bay-story-v4') || 'null');
-    if (!data) return;
-    game.cash = Math.max(0, Number(data.cash) || 0);
-    game.missionIndex = Math.min(game.missions.length - 1, Math.max(0, Number(data.missionIndex) || 0));
-    game.completed = Math.min(game.missions.length, Math.max(0, Number(data.completed) || 0));
-    game.health = Math.max(1, Math.min(100, Number(data.health) || 100));
-    game.player.health = game.health;
-    game.player.x = Number(data.x) || game.player.x;
-    game.player.z = Number(data.z) || game.player.z;
-    game.wanted = Math.min(5, Math.max(0, Number(data.wanted) || 0));
-    game.storyLoaded = true;
-  } catch {
-    game.notify('SAVE FILE COULD NOT BE READ');
-  }
-}
-
-export function saveProgress(game) {
-  const data = {
-    cash: game.cash, missionIndex: game.missionIndex, completed: game.completed || 0,
-    health: game.player.health, x: game.player.x, z: game.player.z, wanted: game.wanted,
-  };
-  localStorage.setItem('solara-bay-story-v4', JSON.stringify(data));
-  game.notify('PROGRESS SAVED');
-  return data;
-}
-
-export function updateMission(game, dt) {
-  const mission = game.missions[game.missionIndex];
-  if (!mission || game.mode !== 'play') return;
-  game.marker.position.set(mission.target.x, 0, mission.target.z);
-  game.marker.rotation.y += dt * .5;
-  if (mission.type === 'crate') mission.crates.forEach(crate => crate.visible = true);
-  if (mission.type === 'drop' && game.wanted === 0) game.wanted = 1;
-  if (mission.type === 'escape' && game.wanted < 3) game.crime(3 - game.wanted, 'THREE-STAR PURSUIT');
-  if (mission.type === 'final' && game.wanted < 4) game.crime(4 - game.wanted, 'FINAL RUN • FOUR-STAR HEAT');
-  if (mission.type === 'crate' && !mission.crewSpawned) {
-    mission.crewSpawned = true;
-    spawnHarborCrew(game);
-  }
-  if (mission.type === 'steal' && game.car && distance(game.player, mission.target) < 15) finishMission(game);
-  else if (mission.type === 'crate') {
-    const next = mission.crates.find(crate => crate.visible);
-    if (next && distance(game.player, next.position) < 5 && !game.car && game.enemies.length === 0) {
-      next.visible = false;
-      game.cratesCollected++;
-      game.notify(`LEDGER RECOVERED • ${game.cratesCollected}/3`);
-      if (game.cratesCollected >= 3) finishMission(game);
+export const STORY = [
+  { name: 'FIRST WHEELS', story: 'A harbor debt is due in seven days. Mara needs wheels and a place to plan.', objective: 'Steal a parked car and reach Vale Auto safehouse.', type: 'steal', x: GARAGE.x, z: GARAGE.z, reward: 500 },
+  { name: 'BAYFRONT DROP', story: 'A sealed package crosses the bayfront. Keep moving; the sirens are already awake.', objective: 'Deliver the package across town with 1-star heat.', type: 'drop', x: 144, z: 144, reward: 900, wanted: 1 },
+  { name: 'HARBOR HEIST', story: 'Three cargo crates hold the records that can cancel the debt. The docks are watched.', objective: 'Collect 3 marked crates at the docks. Dock crew are armed.', type: 'crate', x: 165, z: -91, reward: 1500, wanted: 2 },
+  { name: 'MIDNIGHT COURIER', story: 'The drop window closes at midnight. Cross the island before the tide turns.', objective: 'Reach the north-side drop before the clock hits zero.', type: 'timed', x: -144, z: -144, reward: 1800, wanted: 2, timer: 100 },
+  { name: 'DOCKSIDE PAYBACK', story: 'Four crew members have Mara’s ledger. Get it back, and end the dockside account.', objective: 'Defeat the four armed dock guards and reclaim Mara’s ledger.', type: 'crew', x: 155, z: -108, reward: 2000 },
+  { name: 'THE GETAWAY', story: 'The ledger is safe. Now lose the three-star search and get home.', objective: 'Lose 3-star pursuit, then return to the safehouse.', type: 'escape', x: GARAGE.x, z: GARAGE.z, reward: 2200, wanted: 3 },
+  { name: 'ISLAND LOOP', story: 'One lap of Solara. Every checkpoint before the timer runs out.', objective: 'Race the island ring road through all checkpoints in order.', type: 'race', x: 0, z: 0, reward: 3000, timer: 110 },
+  { name: 'KING OF SOLARA', story: 'One last run to the lighthouse. Mara’s week ends at North Point.', objective: 'Reach the lighthouse with 4-star heat.', type: 'final', x: LIGHTHOUSE.x, z: LIGHTHOUSE.z, reward: 5000, wanted: 4 }
+];
+const RACE_POINTS = [[0, -160], [150, -144], [160, 0], [144, 150], [0, 160], [-150, 144], [-160, 0], [-144, -150]];
+export function createMissions(state) {
+  let crateCount = 0;
+  let checkpoints = [];
+  let checkpoint = 0;
+  let timer = 0;
+  let activeGuards = [];
+  let mission = 0;
+  function current() { return STORY[Math.min(mission, STORY.length - 1)]; }
+  function start(index = mission) {
+    mission = Math.max(0, Math.min(STORY.length - 1, index));
+    crateCount = 0;
+    checkpoint = 0;
+    timer = current().timer || 0;
+    state.wanted = Math.max(state.wanted, current().wanted || 0);
+    if (current().type === 'crew') {
+      activeGuards = [[145, -92], [171, -119], [184, -96], [151, -132]].map(([x, z]) => state.combat.spawnGuard(x, z));
     }
-  } else if (mission.type === 'escape') {
-    if (game.wanted === 0) finishMission(game);
-  } else if (distance(game.player, mission.target) < (mission.type === 'drop' ? 11 : 8)) {
-    if (mission.type !== 'final' || game.wanted >= 4) finishMission(game);
+    if (current().type === 'crate') {
+      crateCount = 0;
+      state.crates?.forEach(crate => crate.mesh.visible = true);
+    }
+    if (current().type === 'race') checkpoints = RACE_POINTS.map(([x, z]) => ({ x, z }));
+    state.save();
   }
-}
-
-function spawnHarborCrew(game) {
-  game.enemies = [];
-  for (let i = 0; i < 4; i++) {
-    const mesh = createPerson(i % 2 ? '#644741' : '#39474a');
-    const x = 105 + (i % 2) * 25;
-    const z = 127 + Math.floor(i / 2) * 19;
-    mesh.position.set(x, 0, z);
-    game.scene.add(mesh);
-    game.enemies.push({ x, z, mesh, health: 2, lastShot: i * .5 });
+  function position() {
+    const m = current();
+    if (m.type === 'race' && checkpoints[checkpoint]) return checkpoints[checkpoint];
+    if (m.type === 'crate' && state.crates?.find(crate => crate.mesh.visible)) return state.crates.find(crate => crate.mesh.visible);
+    return m;
   }
-  game.notify('DOCK CREW • CLEAR THE YARD');
-}
-
-function finishMission(game) {
-  const mission = game.missions[game.missionIndex];
-  game.cash += mission.reward;
-  game.completed = game.missionIndex + 1;
-  game.audio.chime();
-  game.effects.burst(game.player.x, 2, game.player.z, '#ffd56c', 30);
-  game.notify(`${mission.title} COMPLETE • +$${mission.reward.toLocaleString()}`);
-  saveProgress(game);
-  game.missionIndex++;
-  if (game.missionIndex >= game.missions.length) {
-    game.mode = 'ending';
-    game.showResult('SOLARA POINT', 'KING OF SOLARA', 'The last light sweeps across the bay. Mara walks away with the coast behind her and the whole city ahead.\n\nSOLARA BAY IS YOURS.');
+  function update(dt) {
+    if (mission >= STORY.length) return;
+    const m = current();
+    const p = state.player.car || state.player;
+    if (m.type === 'timed' || m.type === 'race') {
+      timer -= dt;
+      if (timer <= 0) { timer = 0; state.toast('CLOCK RAN OUT — MISSION RESTARTED'); start(mission); return; }
+    }
+    if (m.type === 'steal' && state.player.car && distance(p, GARAGE) < 13) complete();
+    else if (m.type === 'drop' && distance(p, m) < 11) complete();
+    else if (m.type === 'crate') {
+      const target = position();
+      if (target && distance(p, target) < 7) { target.mesh.visible = false; crateCount++; state.audio.effect('pickup'); state.toast(`CARGO SECURED ${crateCount}/3`); if (crateCount >= 3) complete(); }
+    } else if (m.type === 'timed' && distance(p, m) < 12) complete();
+    else if (m.type === 'crew' && activeGuards.every(g => g.down) && distance(p, m) < 10) complete();
+    else if (m.type === 'escape' && state.wanted === 0 && distance(p, GARAGE) < 12) complete();
+    else if (m.type === 'race' && distance(p, checkpoints[checkpoint]) < 13) {
+      checkpoint++;
+      state.audio.effect('pickup');
+      state.toast(`CHECKPOINT ${checkpoint}/${checkpoints.length}`);
+      if (checkpoint >= checkpoints.length) complete();
+    } else if (m.type === 'final' && distance(p, LIGHTHOUSE) < 14) complete(true);
+    state.missionTimer = timer;
   }
+  function complete(ending = false) {
+    state.player.cash += current().reward;
+    state.toast(`${current().name} COMPLETE  +$${current().reward.toLocaleString()}`);
+    state.audio.effect('pickup');
+    mission++;
+    state.missionIndex = mission;
+    state.unlockedMissions = Math.min(STORY.length, Math.max(state.unlockedMissions, mission + 1));
+    state.save();
+    if (ending) state.endGame = true;
+    else start(mission);
+  }
+  function onKill(enemy) { if (activeGuards.includes(enemy)) state.toast(`DOCK CREW DOWN / ${Math.max(0, activeGuards.filter(g => !g.down).length - 1)} TO GO`); }
+  function select(index) { if (index < state.unlockedMissions) start(index); }
+  return { start, update, current, position, onKill, select, get index() { return mission; }, get timer() { return timer; }, get crateCount() { return crateCount; }, get checkpoint() { return checkpoint; }, get checkpointCount() { return checkpoints.length; } };
 }

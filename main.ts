@@ -1,19 +1,22 @@
-import { cpSync, mkdirSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+// Deterministic make.fun hand-in: copy the playable files, then describe that exact output tree.
+import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-// Resolve all inputs from the checked-in entrypoint, not the caller's working directory.
-const root = fileURLToPath(new URL('.', import.meta.url));
-const destination = process.env.MAKEFUN_OUTPUT_DIR || '/output';
-mkdirSync(destination, { recursive: true });
-for (const folder of ['game', 'screenshots']) {
-  cpSync(join(root, folder), join(destination, folder), { recursive: true, force: true });
-}
-writeFileSync(join(destination, 'dossier.json'), buildDossier(destination, {
+const root = import.meta.dirname;
+const output = resolve(process.env.MAKEFUN_OUTPUT_DIR || '/output');
+
+mkdirSync(output, { recursive: true });
+// Keep repeated local runs exact even when their destination already exists.
+rmSync(resolve(output, 'game'), { recursive: true, force: true });
+rmSync(resolve(output, 'screenshots'), { recursive: true, force: true });
+rmSync(resolve(output, 'dossier.json'), { force: true });
+cpSync(resolve(root, 'game'), resolve(output, 'game'), { recursive: true });
+cpSync(resolve(root, 'screenshots'), resolve(output, 'screenshots'), { recursive: true });
+const dossier = buildDossier(output, {
   text_max_bytes: 163840,
   screenshots: { max: 4, max_bytes: 262144 },
   game_max_files: 993,
-  game_max_bytes: 50331648,
-}));
-console.log('Solara Bay packaged successfully.');
+  game_max_bytes: 50331648
+});
+writeFileSync(resolve(output, 'dossier.json'), dossier);

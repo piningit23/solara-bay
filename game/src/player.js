@@ -1,38 +1,42 @@
-import { createPerson } from './render.js';
-import { clamp, turnToward } from './config.js';
+import * as THREE from 'three';
+import { clamp } from './config.js';
+import { createPerson, animatePerson } from './models.js';
 
 export function createPlayer(scene) {
-  const mesh = createPerson('#ee885d');
-  mesh.position.set(-4, 0, 19);
+  const mesh = createPerson('#66c6ae');
+  mesh.scale.set(1.08, 1.08, 1.08);
   scene.add(mesh);
-  return { mesh, x: -4, z: 19, heading: 0, health: 100, ammo: 12, reserve: 96, reload: 0 };
+  return { x: -112, z: 78, angle: 0, health: 100, armor: 0, cash: 2200, mesh, car: null, ammo: [48, 22, 160], weapon: 0, jacking: 0, busting: 0, speed: 0, nos: 100, boosting: false, kills: 0 };
 }
-
-export function updateOnFoot(game, dt) {
-  const { player, input, world } = game;
-  if (game.car) {
-    player.x = game.car.x;
-    player.z = game.car.z;
-    player.mesh.visible = false;
-    return;
-  }
-  player.mesh.visible = true;
-  let x = Number(input.down('KeyD')) - Number(input.down('KeyA'));
-  let z = Number(input.down('KeyW')) - Number(input.down('KeyS'));
+export function updateOnFoot(player, input, world, dt, time) {
+  if (player.car || player.jacking > 0 || player.busting > 0) return;
+  let x = 0;
+  let z = 0;
+  if (input.down('KeyW')) z -= 1;
+  if (input.down('KeyS')) z += 1;
+  if (input.down('KeyA')) x -= 1;
+  if (input.down('KeyD')) x += 1;
   const length = Math.hypot(x, z);
   if (length) {
     x /= length;
     z /= length;
-    const dx = x * Math.cos(game.cameraYaw) + z * Math.sin(game.cameraYaw);
-    const dz = z * Math.cos(game.cameraYaw) - x * Math.sin(game.cameraYaw);
-    const speed = input.down('ShiftLeft') ? 12 : 6;
-    if (!world.blocked(player.x + dx * speed * dt, player.z)) player.x += dx * speed * dt;
-    if (!world.blocked(player.x, player.z + dz * speed * dt)) player.z += dz * speed * dt;
-    player.heading = turnToward(player.heading, Math.atan2(dx, dz), dt * 12);
-    player.mesh.userData.legs.forEach((leg, i) => leg.rotation.x = Math.sin(game.time * speed * 1.8 + i * Math.PI) * .5);
+    const speed = input.down('ShiftLeft') || input.down('ShiftRight') ? 12 : 7;
+    const nx = clamp(player.x + x * speed * dt, -178, 178);
+    const nz = clamp(player.z + z * speed * dt, -178, 178);
+    if (!world.collides(nx, player.z, .7)) player.x = nx;
+    if (!world.collides(player.x, nz, .7)) player.z = nz;
+    player.angle = Math.atan2(x, z);
   }
-  player.x = clamp(player.x, -167, 200);
-  player.z = clamp(player.z, -167, 167);
   player.mesh.position.set(player.x, 0, player.z);
-  player.mesh.rotation.y = player.heading;
+  player.mesh.rotation.y = player.angle;
+  animatePerson(player.mesh, time, !!length);
+}
+export function syncPlayerMesh(player) {
+  player.mesh.visible = !player.car;
+  if (!player.car) player.mesh.position.set(player.x, 0, player.z);
+}
+export function steerToward(from, to) {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  return Math.atan2(dx, dz);
 }

@@ -1,167 +1,187 @@
 import * as THREE from 'three';
-import { createRenderer, box } from './render.js';
-import { buildCoastalCity } from './world.js';
-import { Input } from './input.js';
-import { SynthAudio } from './audio.js';
-import { createPlayer, updateOnFoot } from './player.js';
-import { populateParkedCars, updateDriving, addVehicle } from './driving.js';
-import { createTraffic, updateTraffic } from './traffic.js';
-import { createPedestrians, updatePedestrians } from './pedestrians.js';
-import { updatePolice } from './police.js';
-import { Effects, updateCombat, reloadWeapon } from './combat.js';
-import { createStory, updateMission, saveProgress } from './missions.js';
-import { GameHUD } from './hud.js';
-import { shotMode, stageScreenshot } from './shots.js';
-import { distance } from './config.js';
+import { TITLE, GARAGE } from './config.js';
+import { createRenderer } from './render.js';
+import { buildIslandCity } from './world.js';
+import { createInput } from './input.js';
+import { createAudio } from './audio.js';
+import { createRadio } from './radio.js';
+import { createEffects } from './effects.js';
+import { createPlayer, updateOnFoot, syncPlayerMesh } from './player.js';
+import { createDriving } from './driving.js';
+import { createPedestrians } from './pedestrians.js';
+import { createCombat } from './combat.js';
+import { createMissions, STORY } from './missions.js';
+import { createPolice } from './police.js';
+import { createHelicopter } from './helicopter.js';
+import { createHud, titleMenu } from './hud.js';
+import { createSave } from './save.js';
+import { openShop } from './shop.js';
+import { stageScreenshot } from './shots.js';
 
-const { renderer, scene, camera } = createRenderer();
-const input = new Input(renderer.domElement);
-const audio = new SynthAudio();
-const world = buildCoastalCity(scene);
+const view = createRenderer();
+const { scene } = view;
+const world = buildIslandCity(scene);
 const player = createPlayer(scene);
-const game = {
-  renderer, scene, camera, input, audio, world, player,
-  cars: [], police: [], pedestrians: [], enemies: [], missions: [],
-  cash: 1500, wanted: 0, mode: 'menu', time: 0, heatTimer: 0,
-  lastCrime: 0, lastSpawn: 0, randomAngle: 0, cameraYaw: 0,
-  gunNoise: 0, shake: 0, cameraShake: 0, completed: 0,
+const state = { time: 0, player, world, wanted: 0, heatTimer: 0, missionIndex: 0, unlockedMissions: 1, damageFlash: 0, feedbackTimer: 0, shake: 0, missionTimer: 0, endGame: false, screenshotStage: null, toast: () => {}, raiseWanted: () => {}, bust: () => {}, save: () => {}, effects: null, audio: null, combat: null, police: null, missions: null, pedestrians: null, driving: null, helicopter: null, radio: null, crates: [] };
+state.input = createInput();
+state.audio = createAudio();
+state.effects = createEffects(scene);
+state.radio = createRadio(state.audio);
+state.driving = createDriving(scene, state);
+state.pedestrians = createPedestrians(scene, state);
+state.combat = createCombat(scene, state);
+state.missions = createMissions(state);
+state.police = createPolice(scene, state);
+state.helicopter = createHelicopter(scene);
+state.saveSystem = createSave(state);
+state.save = state.saveSystem.save;
+state.missionIndex = 0;
+state.raiseWanted = (amount, crime) => {
+  state.wanted = Math.min(5, state.wanted + amount);
+  state.heatTimer = 0;
+  state.player.lastCrime = { x: state.player.x, z: state.player.z };
+  state.toast(`${crime.toUpperCase()} · ${'★'.repeat(state.wanted)}`);
+  state.police.update(0.01);
 };
-game.effects = new Effects(scene);
-game.hud = new GameHUD();
-game.notify = message => game.hud.notify(message);
-game.crime = (amount, message) => {
-  game.wanted = Math.min(5, game.wanted + amount);
-  game.lastCrime = game.time;
-  game.heatTimer = 0;
-  game.notify(message);
+state.bust = reason => {
+  if (state.paused || state.busted) return;
+  state.busted = true;
+  const menu = document.querySelector('#menu');
+  menu.innerHTML = `<div class="menu-content"><div class="title-kicker">SOLARA BAY POLICE DEPARTMENT</div><h2>BUSTED</h2><p class="story">${reason}. Mara’s story isn’t over yet.</p><div class="buttons"><button class="primary" id="retry">RETRY FROM SAFEHOUSE</button><button id="save-exit">SAVE</button></div></div>`;
+  menu.querySelector('#retry').onclick = () => { state.busted = false; player.health = 100; player.armor = 0; player.x = GARAGE.x; player.z = GARAGE.z; player.car = null; player.mesh.visible = true; state.wanted = 0; state.missions.start(state.missionIndex); menu.innerHTML = ''; };
+  menu.querySelector('#save-exit').onclick = () => { state.save(); state.busted = false; menu.innerHTML = ''; };
 };
-game.hurt = amount => {
-  player.health = Math.max(0, player.health - amount);
-  game.vignette = .5;
-};
-game.bust = (title = 'BUSTED') => {
-  if (game.mode !== 'play') return;
-  game.mode = 'busted';
-  game.showResult('BAY PATROL', title, 'The coast closes in. Your story can start again from the beginning.');
-};
-game.showResult = (tag, title, text) => {
-  document.querySelector('#resultTag').textContent = tag;
-  document.querySelector('#resultTitle').textContent = title;
-  document.querySelector('#resultText').textContent = text;
-  document.querySelector('#result').classList.remove('hidden');
-};
-game.headingTowardTarget = target => Math.atan2(target.x - player.x, target.z - player.z) - player.heading;
-game.addPoliceCar = (x, z, heading) => {
-  const cruiser = addVehicle(game, x, z, heading, { police: true, parked: false });
-  game.police.push(cruiser);
-  return cruiser;
-};
-
-populateParkedCars(game);
-createTraffic(game);
-createPedestrians(game);
-createStory(game);
-
-function startGame(continuing = false) {
-  audio.start();
-  game.mode = 'play';
-  document.querySelector('#menu').classList.add('hidden');
-  if (!continuing) {
-    game.cash = 1500;
-    game.missionIndex = 0;
-    game.completed = 0;
-    game.wanted = 0;
-    player.health = 100;
-    player.x = -4;
-    player.z = 19;
-    player.mesh.position.set(player.x, 0, player.z);
-    game.notify('MARA VALE • PALM QUARTER');
-  }
-  game.pointerReady = true;
+const hud = createHud(state);
+state.toast = text => hud.message(text);
+const crates = [];
+for (let i = 0; i < 3; i++) {
+  const mesh = new THREE.Group();
+  const crate = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.4, 2.6), new THREE.MeshStandardMaterial({ color: i % 2 ? '#d27e4b' : '#e7bc63', roughness: .82 }));
+  crate.position.y = 1.4;
+  crate.castShadow = true;
+  mesh.add(crate);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.68, .22, 2.68), new THREE.MeshStandardMaterial({ color: '#496a69' }));
+  stripe.position.y = 1.4;
+  mesh.add(stripe);
+  mesh.position.set(155 + i * 11, 0, -77 - i * 14);
+  scene.add(mesh);
+  crates.push({ x: mesh.position.x, z: mesh.position.z, mesh });
 }
-
-document.querySelector('#start').addEventListener('click', () => startGame(false));
-document.querySelector('#continue').addEventListener('click', () => startGame(true));
-document.querySelector('#resume').addEventListener('click', () => {
-  game.mode = 'play';
-  document.querySelector('#pause').classList.add('hidden');
-});
-document.querySelector('#save').addEventListener('click', () => {
-  saveProgress(game);
-  document.querySelector('#saved').textContent = 'SAVED TO THIS BROWSER';
-});
-document.querySelector('#retry').addEventListener('click', () => location.reload());
-window.addEventListener('keydown', event => {
-  if (event.code === 'Escape' && input.tap('Escape')) {
-    if (game.mode === 'play') {
-      game.mode = 'pause';
-      document.querySelector('#pause').classList.remove('hidden');
-    } else if (game.mode === 'pause') {
-      game.mode = 'play';
-      document.querySelector('#pause').classList.add('hidden');
+state.crates = crates;
+const missionMarker = new THREE.Group();
+const ring = new THREE.Mesh(new THREE.TorusGeometry(3.4, .24, 8, 36), new THREE.MeshBasicMaterial({ color: '#f3cd74' }));
+ring.rotation.x = Math.PI / 2;
+missionMarker.add(ring);
+const beam = new THREE.Mesh(new THREE.CylinderGeometry(.15, 1.8, 18, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#f8d77e', transparent: true, opacity: .15, side: THREE.DoubleSide, depthWrite: false }));
+beam.position.y = 9;
+missionMarker.add(beam);
+scene.add(missionMarker);
+const input = state.input;
+state.missions.start(0);
+state.saveSystem.load();
+state.missionIndex = Math.min(state.missionIndex, STORY.length - 1);
+state.missions.start(state.missionIndex);
+const params = new URLSearchParams(location.search);
+const staged = stageScreenshot(state, params);
+let running = false;
+let last = performance.now();
+let gameStarted = false;
+const title = document.title;
+document.title = TITLE;
+function startGame(continueRun = false) {
+  state.audio.start();
+  gameStarted = true;
+  state.paused = false;
+  document.querySelector('#menu').innerHTML = '';
+  if (!staged) {
+    if (continueRun) state.saveSystem.load();
+    else { state.missionIndex = 0; player.cash = 2200; player.health = 100; state.wanted = 0; }
+    state.unlockedMissions = Math.max(state.unlockedMissions, state.missionIndex + 1);
+    state.missions.start(state.missionIndex);
+  }
+  running = true;
+  document.querySelector('#hud').hidden = false;
+}
+function showPause() {
+  if (!gameStarted) return;
+  state.paused = true;
+  state.save();
+  const menu = document.querySelector('#menu');
+  menu.innerHTML = `<div class="menu-content"><div class="title-kicker">SOLARA BAY / PAUSED</div><h2>TAKE A BREATH.</h2><p class="story">Cash $${player.cash.toLocaleString()} · ${state.missions.current().name} · autosave on mission complete.</p><div class="buttons"><button class="primary" id="resume">BACK TO THE ISLAND</button><button id="save">SAVE GAME</button><button id="quit">TITLE SCREEN</button></div><p class="key-guide">ESC RESUME &nbsp;·&nbsp; The safehouse clears heat faster.</p></div>`;
+  menu.querySelector('#resume').onclick = () => { state.paused = false; input.end(); menu.innerHTML = ''; };
+  menu.querySelector('#save').onclick = () => { state.save(); menu.querySelector('.story').textContent = 'GAME SAVED TO THIS BROWSER.'; };
+  menu.querySelector('#quit').onclick = () => { gameStarted = false; running = false; menu.innerHTML = ''; titleMenu(() => startGame(false), () => startGame(true), selectMissions); };
+}
+function selectMissions() {
+  const menu = document.querySelector('#menu');
+  menu.innerHTML = `<div class="menu-content"><div class="title-kicker">MARA VALE / STORY ARCHIVE</div><h2>MISSION SELECT</h2><p class="story">Completed runs unlock replay access. Current progress saves locally.</p><div id="mission-list"></div><div class="buttons"><button class="primary" id="back">BACK</button></div></div>`;
+  const list = menu.querySelector('#mission-list');
+  STORY.forEach((mission, index) => {
+    const button = document.createElement('button');
+    button.style.margin = '4px';
+    button.disabled = index >= state.unlockedMissions;
+    button.textContent = `${String(index + 1).padStart(2, '0')} · ${mission.name} ${button.disabled ? '🔒' : ''}`;
+    button.onclick = () => { state.missions.select(index); startGame(true); };
+    list.append(button);
+  });
+  menu.querySelector('#back').onclick = () => titleMenu(() => startGame(false), () => startGame(true), selectMissions);
+}
+if (staged === 'start') {
+  titleMenu(() => startGame(false), () => startGame(true), selectMissions);
+} else {
+  startGame(true);
+  state.paused = false;
+}
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(.035, Math.max(0, (now - last) / 1000));
+  last = now;
+  if (!running || state.paused || state.busted || state.endGame) {
+    if (state.endGame) {
+      const menu = document.querySelector('#menu');
+      if (!menu.querySelector('#ending')) menu.innerHTML = `<div class="menu-content" id="ending"><div class="title-kicker">SOLARA BAY / DAY SEVEN</div><h2>KING OF SOLARA</h2><p class="story">The lighthouse turns across the harbor. The ledger is home. The debt is gone. Mara Vale has her island back.</p><div class="buttons"><button class="primary" id="free-roam">FREE ROAM</button><button id="ending-save">SAVE</button></div></div>`;
+      menu.querySelector('#free-roam').onclick = () => { state.endGame = false; gameStarted = true; running = true; menu.innerHTML = ''; };
+      menu.querySelector('#ending-save').onclick = () => state.save();
+    }
+    view.draw();
+    return;
+  }
+  state.time += dt;
+  if (input.tap('Escape')) { if (state.paused) { state.paused = false; document.querySelector('#menu').innerHTML = ''; } else showPause(); }
+  if (input.tap('KeyQ')) { state.radio.cycle(); state.toast(`TUNED TO ${state.radio.current.name}`); }
+  if (input.tap('KeyF') && Math.hypot((state.player.car || player).x - GARAGE.x, (state.player.car || player).z - GARAGE.z) < 23) { state.paused = true; openShop(state); }
+  if (input.tap('KeyE')) {
+    if (player.car) state.driving.exit();
+    else {
+      const car = state.driving.nearParked();
+      if (car && Math.hypot(player.x - car.x, player.z - car.z) < 11) { player.jacking = .65; state.raiseWanted(1, 'Vehicle theft'); window.setTimeout(() => { if (player.jacking > 0) { player.jacking = 0; state.driving.enter(car); } }, 500); }
+      else state.toast('NO VEHICLE IN REACH');
     }
   }
-});
-
-for (let index = 0; index < 5; index++) {
-  const button = document.createElement('button');
-  button.className = 'secondary';
-  button.textContent = `MISSION ${String(index + 1).padStart(2, '0')}`;
-  button.disabled = index > game.completed;
-  button.addEventListener('click', () => {
-    game.missionIndex = index;
-    startGame(true);
-  });
-  document.querySelector('#select').append(button);
-}
-if (game.storyLoaded) document.querySelector('#continue').classList.remove('hidden');
-document.querySelector('#hint').textContent = 'WASD MOVE  •  SHIFT RUN  •  E ENTER / EXIT  •  RIGHT MOUSE ORBIT  •  CLICK FIRE  •  R RELOAD  •  ESC PAUSE';
-
-const stage = shotMode();
-stageScreenshot(game, game.hud, stage);
-let previous = performance.now();
-function frame(now) {
-  const dt = Math.min((now - previous) / 1000, .04);
-  previous = now;
-  game.time += dt;
-  if (game.mode === 'play') {
-    if (input.tap('KeyR')) reloadWeapon(game);
-    if (input.tap('Escape')) {}
-    updateOnFoot(game, dt);
-    updateDriving(game, dt);
-    updateTraffic(game, dt);
-    updatePedestrians(game, dt);
-    updatePolice(game, dt);
-    updateCombat(game, dt);
-    updateMission(game, dt);
-    audio.update(dt, game);
-  }
-  game.effects.update(dt);
-  game.hud.update(game, dt);
-  if (game.mode !== 'menu') followCamera(dt);
-  game.vignette = Math.max(0, (game.vignette || 0) - dt);
-  document.querySelector('#vignette').style.opacity = game.vignette;
+  if (input.tap('KeyS') && input.down('ControlLeft')) { state.save(); state.toast('GAME SAVED'); }
+  updateOnFoot(player, input, world, dt, state.time);
+  state.driving.updateTraffic(dt);
+  state.driving.updatePlayerCar(dt, input, world);
+  syncPlayerMesh(player);
+  state.pedestrians.update(dt);
+  state.combat.update(dt, input);
+  state.police.update(dt);
+  state.helicopter.update(dt, state);
+  state.missions.update(dt);
+  state.effects.update(dt);
+  state.radio.update(dt);
+  state.audio.update(state, dt);
+  view.setNight(state.missions.current().type === 'timed' && Math.sin(state.time * .025) < -.25);
+  const waypoint = state.missions.position();
+  if (waypoint) { missionMarker.position.set(waypoint.x, 0, waypoint.z); missionMarker.rotation.y += dt * .45; }
+  for (const crate of crates) if (crate.mesh.visible) crate.mesh.rotation.y = Math.sin(state.time * 1.5 + crate.x) * .13;
+  state.shake = Math.max(0, state.shake - dt * .55);
+  state.damageFlash = Math.max(0, state.damageFlash - dt * 1.8);
+  state.feedbackTimer = Math.max(0, state.feedbackTimer - dt);
+  state.player.busting = Math.max(0, state.player.busting - dt * .4);
+  hud.update(dt);
+  view.follow(state, dt);
+  view.draw();
   input.end();
-  renderer.render(scene, camera);
-  requestAnimationFrame(frame);
 }
-
-function followCamera(dt) {
-  const subject = game.car || player;
-  const heading = game.car?.heading ?? player.heading;
-  const yaw = input.yaw + heading;
-  game.cameraYaw += (input.yaw - game.cameraYaw) * Math.min(1, dt * 5);
-  const distanceBack = game.car ? 15 : 9;
-  const height = game.car ? 7.2 : 5.5;
-  const look = new THREE.Vector3(subject.x, game.car ? 1.5 : 1.8, subject.z);
-  const desired = new THREE.Vector3(subject.x - Math.sin(yaw) * distanceBack, height, subject.z - Math.cos(yaw) * distanceBack);
-  camera.position.lerp(desired, 1 - Math.exp(-dt * 5));
-  if (game.cameraShake > 0) {
-    game.cameraShake -= dt;
-    camera.position.x += (Math.random() - .5) * game.cameraShake;
-    camera.position.y += (Math.random() - .5) * game.cameraShake;
-  }
-  camera.lookAt(look);
-}
-
 requestAnimationFrame(frame);

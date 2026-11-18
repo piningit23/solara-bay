@@ -1,115 +1,67 @@
 import * as THREE from 'three';
+import { clamp } from './config.js';
 
 export function createRenderer() {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setSize(innerWidth, innerHeight);
+  const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('#view'), antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.3;
-  document.querySelector('#game').append(renderer.domElement);
+  renderer.toneMappingExposure = 1.25;
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#85cad0');
-  scene.fog = new THREE.Fog('#b8d7d2', 100, 390);
-  scene.add(new THREE.HemisphereLight('#e2f9ff', '#a67b59', 2.4));
-  const sun = new THREE.DirectionalLight('#ffe0aa', 3.4);
-  sun.position.set(-90, 160, -60);
+  scene.background = new THREE.Color('#b5d8d6');
+  scene.fog = new THREE.Fog('#b5d8d6', 100, 470);
+  const camera = new THREE.PerspectiveCamera(57, innerWidth / innerHeight, .1, 1400);
+  const ambient = new THREE.HemisphereLight('#ddf6ed', '#9a806a', 2.1);
+  scene.add(ambient);
+  const sun = new THREE.DirectionalLight('#ffe2ac', 3.4);
+  sun.position.set(-90, 130, 50);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -160, right: 160, top: 160, bottom: -160, far: 450 });
-  sun.shadow.bias = -.001;
+  Object.assign(sun.shadow.camera, { left: -190, right: 190, top: 190, bottom: -190, near: 1, far: 400 });
+  sun.shadow.bias = -.0005;
   scene.add(sun);
-  const camera = new THREE.PerspectiveCamera(57, innerWidth / innerHeight, .2, 700);
-  window.addEventListener('resize', () => {
+  let orbit = 0;
+  let pitch = .37;
+  addEventListener('mousemove', event => {
+    if (event.buttons === 2 || document.pointerLockElement) {
+      orbit -= event.movementX * .004;
+      pitch = clamp(pitch + event.movementY * .003, .1, .9);
+    }
+  });
+  addEventListener('contextmenu', event => event.preventDefault());
+  addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
   });
-  return { renderer, scene, camera };
-}
-
-const materials = new Map();
-export function material(color) {
-  if (!materials.has(color)) materials.set(color, new THREE.MeshStandardMaterial({ color, roughness: .78 }));
-  return materials.get(color);
-}
-export function box(parent, x, y, z, width, height, depth, color) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material(color));
-  mesh.position.set(x, y, z);
-  mesh.castShadow = height > 1;
-  mesh.receiveShadow = true;
-  parent.add(mesh);
-  return mesh;
-}
-export function cylinder(parent, x, y, z, radius, height, color, top = radius) {
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(top, radius, height, 9), material(color));
-  mesh.position.set(x, y, z);
-  mesh.castShadow = true;
-  parent.add(mesh);
-  return mesh;
-}
-export function label(parent, text, x, y, z, width = 12, color = '#ffe2a1', background = '#164957') {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
-  const context = canvas.getContext('2d');
-  context.fillStyle = background;
-  context.fillRect(0, 0, 512, 128);
-  context.strokeStyle = color;
-  context.lineWidth = 7;
-  context.strokeRect(8, 8, 496, 112);
-  context.font = 'bold 49px Arial';
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  context.fillStyle = color;
-  context.fillText(text, 256, 66, 470);
-  const texture = new THREE.CanvasTexture(canvas);
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, width / 4), new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide }));
-  mesh.position.set(x, y, z);
-  parent.add(mesh);
-  return mesh;
-}
-
-export function createPerson(color = '#f47752', officer = false) {
-  const group = new THREE.Group();
-  box(group, 0, 1.45, 0, .85, 1.05, .48, color);
-  cylinder(group, 0, 2.24, 0, .29, .5, '#b87950');
-  box(group, 0, 2.49, -.02, .6, .18, .54, officer ? '#132e49' : '#352a2a');
-  const legs = [-.23, .23].map(x => box(group, x, .5, 0, .3, 1, .35, '#233e54'));
-  box(group, -.58, 1.4, 0, .25, .9, .28, '#b87950');
-  box(group, .58, 1.55, .25, .25, .7, .28, '#b87950');
-  if (officer) box(group, .18, 1.7, .26, .15, .18, .03, '#ffd675');
-  group.userData.legs = legs;
-  return group;
-}
-
-export function createCar(color, model = 0, police = false) {
-  const group = new THREE.Group();
-  const length = model === 1 ? 6 : 5.2;
-  box(group, 0, .95, 0, 2.55, .95, length, police ? '#f0f3df' : color);
-  box(group, 0, 1.4, .1, 2.4, .2, length - .3, police ? '#173044' : color);
-  box(group, 0, 1.95, -.25, 2.05, 1.05, model === 1 ? 3.3 : 2.55, '#244655');
-  box(group, 0, 2.48, -.25, 2.12, .14, model === 1 ? 3.4 : 2.65, police ? '#f3f2dd' : color);
-  for (const x of [-1.32, 1.32]) {
-    for (const z of [-1.65, 1.65]) {
-      const wheel = cylinder(group, x, .65, z, .6, .35, '#182b32');
-      wheel.rotation.z = Math.PI / 2;
-      const hub = cylinder(group, x * 1.02, .65, z, .3, .38, '#a5b9b7');
-      hub.rotation.z = Math.PI / 2;
-    }
-    box(group, x * .7, 1.06, length / 2 + .03, .55, .3, .09, '#fff2b1');
-    box(group, x * .7, 1.06, -length / 2 - .03, .55, .3, .09, '#ec634e');
+  const desired = new THREE.Vector3();
+  const look = new THREE.Vector3();
+  function follow(state, dt) {
+    const p = state.player;
+    const car = p.car;
+    const heading = car ? car.angle : p.angle;
+    if (car && !state.input.mouseOrbit) orbit *= Math.exp(-dt * .6);
+    const a = heading + orbit;
+    const distance = car ? 17 : 11;
+    desired.set(p.x - Math.sin(a) * distance, (car ? 8.5 : 6.5) + pitch * 4, p.z - Math.cos(a) * distance);
+    // Lift the follow camera if a block would conceal the subject.
+    if (state.world.collides(desired.x, desired.z, .4)) desired.y = 37;
+    camera.position.lerp(desired, 1 - Math.exp(-dt * 7));
+    if (state.shake > 0) { camera.position.x += Math.sin(state.time * 83) * state.shake; camera.position.y += Math.cos(state.time * 79) * state.shake; }
+    look.set(p.x, 2.1, p.z);
+    camera.lookAt(look);
+    const fov = car?.boosting ? 66 : 57;
+    camera.fov += (fov - camera.fov) * Math.min(1, dt * 5);
+    camera.updateProjectionMatrix();
   }
-  box(group, 0, .65, length / 2 + .08, 2.3, .19, .16, '#bac9c1');
-  if (police) {
-    box(group, 0, 2.65, -.2, 1.6, .14, .48, '#172f43');
-    group.userData.red = box(group, -.5, 2.85, -.2, .6, .27, .4, '#ff464d');
-    group.userData.blue = box(group, .5, 2.85, -.2, .6, .27, .4, '#38adff');
-    label(group, 'POLICE', 0, 1.4, -length / 2 - .06, 1.8, '#163f52', '#e4eee2');
-  } else if (model === 2) {
-    box(group, 0, 1.6, -2.1, 2.7, .15, .5, color);
+  function setNight(night) {
+    scene.background.set(night ? '#263c58' : '#b5d8d6');
+    scene.fog.color.copy(scene.background);
+    ambient.intensity = night ? .85 : 2.1;
+    sun.intensity = night ? .8 : 3.4;
   }
-  return group;
+  return { scene, camera, renderer, follow, setNight, draw: () => renderer.render(scene, camera) };
 }

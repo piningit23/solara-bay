@@ -1,51 +1,72 @@
-export function shotMode() {
-  return new URLSearchParams(location.search).get('shot') || '';
-}
+import * as THREE from 'three';
+import { createCar, createPerson, label } from './models.js';
+import { GARAGE } from './config.js';
 
-export function stageScreenshot(game, hud, mode) {
-  const stages = {
-    cover: { x: 34, z: 18, heading: Math.PI * .42, mission: 1, wanted: 3, cash: 4250 },
-    'on-foot': { x: -12, z: -15, heading: .6, mission: 0, wanted: 0, cash: 1850 },
-    police: { x: 120, z: 108, heading: 0, mission: 2, wanted: 2, cash: 6400 },
-  };
-  if (mode === 'start') {
-    document.querySelector('#menu').classList.remove('hidden');
-    document.querySelector('#continue').classList.add('hidden');
-    game.mode = 'menu';
-    return;
+export function stageScreenshot(state, params) {
+  const shot = params.get('shot');
+  if (!shot || shot === 'start') return shot;
+  state.screenshotStage = shot;
+  state.wanted = 0;
+  state.player.health = 100;
+  state.player.armor = 70;
+  const player = state.player;
+  player.x = shot === 'police' ? 144 : shot === 'on-foot' ? -72 : 0;
+  player.z = shot === 'police' ? -60 : shot === 'on-foot' ? 40 : 0;
+  if (shot !== 'on-foot' && shot !== 'police') {
+    const car = state.driving.parked[6];
+    car.x = player.x;
+    car.z = player.z;
+    car.angle = 0;
+    car.mesh.position.set(car.x, 0, car.z);
+    car.mesh.rotation.y = car.angle;
+    state.driving.enter(car);
   }
-  const stage = stages[mode];
-  if (!stage) return;
-  try { localStorage.removeItem('solara-bay-story-v4'); } catch {}
-  game.mode = 'play';
-  game.player.x = stage.x;
-  game.player.z = stage.z;
-  game.player.mesh.position.set(stage.x, 0, stage.z);
-  game.player.heading = stage.heading;
-  game.missionIndex = stage.mission;
-  game.cash = stage.cash;
-  game.wanted = stage.wanted;
-  if (mode === 'cover') {
-    game.car = game.cars.find(car => car.parked && !car.traffic);
-    game.car.parked = false;
-    game.car.stolen = true;
-    game.car.x = stage.x;
-    game.car.z = stage.z;
-    game.car.heading = stage.heading;
-    game.car.speed = 17;
-    game.car.mesh.position.set(stage.x, 0, stage.z);
-    game.car.mesh.rotation.y = stage.heading;
-    for (const [i, offset] of [-1, 1].entries()) {
-      const cruiser = game.addPoliceCar(stage.x - offset * 13, stage.z - 24 - i * 4, stage.heading);
-      cruiser.speed = 27;
+  if (shot === 'on-foot') {
+    player.mesh.position.set(player.x, 0, player.z);
+    state.player.angle = Math.PI / 2;
+  }
+  if (shot === 'police') {
+    state.missions.start(2);
+  }
+  if (shot === 'cover') {
+    state.driving.parked[0].x = 0;
+    state.driving.parked[0].z = 0;
+    state.driving.parked[0].mesh.position.set(0, 0, 0);
+    state.driving.parked[0].mesh.rotation.y = Math.PI / 2;
+    state.driving.parked[0].angle = Math.PI / 2;
+    state.wanted = 3;
+    state.missions.start(1);
+    state.wanted = 3;
+    state.player.car.speed = 11;
+    state.player.car.angle = Math.PI / 2;
+    state.player.car.mesh.rotation.y = Math.PI / 2;
+    state.player.cash = 4650;
+    state.radio.cycle();
+    state.radio.cycle();
+    state.screenshotStage = null;
+    state.police.update(0.01);
+    state.screenshotStage = shot;
+    state.police.cars.forEach((cop, i) => {
+      if (i < 2) { cop.x = player.x + (i ? 8 : -8); cop.z = player.z - 42 - i * 9; cop.angle = 0; cop.mesh.position.set(cop.x, 0, cop.z); cop.mesh.rotation.y = 0; }
+    });
+    state.helicopter.active = true;
+    state.helicopter.root.visible = true;
+    state.helicopter.root.position.set(player.x + 17, 31, player.z - 8);
+    state.helicopter.root.rotation.y = -.8;
+  }
+  if (shot === 'police') {
+    state.wanted = 3;
+    state.screenshotStage = null;
+    state.police.update(.01);
+    state.screenshotStage = shot;
+    state.helicopter.active = true;
+    state.helicopter.root.visible = true;
+    state.helicopter.root.position.set(player.x + 20, 34, player.z - 17);
+    state.player.mesh.visible = true;
+    for (let i = 0; i < 4; i++) {
+      const guard = state.combat.spawnGuard(139 + i * 5, -111 - (i % 2) * 9);
+      guard.name = 'DOCK CREW';
     }
   }
-  if (mode === 'police') {
-    for (const [i, offset] of [-1, 1].entries()) {
-      const cruiser = game.addPoliceCar(stage.x + offset * 18, stage.z + 37 + i * 3, Math.PI);
-      cruiser.speed = 18;
-    }
-  }
-  hud.update(game, 0);
-  document.querySelector('#menu').classList.add('hidden');
+  return shot;
 }

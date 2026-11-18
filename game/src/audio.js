@@ -1,49 +1,62 @@
-export class SynthAudio {
-  constructor() {
-    this.context = null;
-    this.musicClock = 0;
-    this.beat = 0;
-  }
-  start() {
-    if (!this.context) {
-      this.context = new AudioContext();
-      this.engine = this.context.createOscillator();
-      this.engineGain = this.context.createGain();
-      this.engine.type = 'sawtooth';
-      this.engineGain.gain.value = 0;
-      this.engine.connect(this.engineGain).connect(this.context.destination);
-      this.engine.start();
+export function createAudio() {
+  let context;
+  let master;
+  let engine;
+  let engineGain;
+  let rotor;
+  let rotorGain;
+  function start() {
+    if (!context) {
+      context = new AudioContext();
+      master = context.createGain();
+      master.gain.value = .18;
+      master.connect(context.destination);
+      engine = context.createOscillator();
+      engine.type = 'sawtooth';
+      engineGain = context.createGain();
+      engineGain.gain.value = 0;
+      engine.connect(engineGain).connect(master);
+      engine.start();
+      rotor = context.createOscillator();
+      rotor.type = 'triangle';
+      rotorGain = context.createGain();
+      rotorGain.gain.value = 0;
+      rotor.connect(rotorGain).connect(master);
+      rotor.start();
     }
-    this.context.resume();
+    context.resume();
   }
-  tone(frequency, duration = .15, volume = .04, type = 'sine') {
-    if (!this.context) return;
-    const now = this.context.currentTime;
-    const oscillator = this.context.createOscillator();
-    const gain = this.context.createGain();
+  function tone(frequency, duration = .16, volume = .3, type = 'triangle', delay = 0) {
+    if (!context) return;
+    const at = context.currentTime + delay;
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
     oscillator.type = type;
-    oscillator.frequency.setValueAtTime(frequency, now);
-    gain.gain.setValueAtTime(volume, now);
-    gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
-    oscillator.connect(gain).connect(this.context.destination);
-    oscillator.start();
-    oscillator.stop(now + duration);
+    oscillator.frequency.setValueAtTime(frequency, at);
+    gain.gain.setValueAtTime(volume, at);
+    gain.gain.exponentialRampToValueAtTime(.001, at + duration);
+    oscillator.connect(gain).connect(master);
+    oscillator.start(at);
+    oscillator.stop(at + duration);
   }
-  shot() { this.tone(92, .12, .13, 'sawtooth'); }
-  chime() {
-    this.tone(523, .3, .08);
-    setTimeout(() => this.tone(784, .5, .06), 140);
+  function effect(name) {
+    if (name === 'shot') { tone(120, .09, .5, 'sawtooth'); tone(52, .15, .4, 'square'); }
+    if (name === 'pickup') [440, 554, 659, 880].forEach((f, i) => tone(f, .25, .3, 'sine', i * .07));
+    if (name === 'hit') tone(55, .22, .5, 'sawtooth');
+    if (name === 'reload') { tone(220, .06, .2, 'square'); tone(330, .05, .2, 'square', .2); }
   }
-  update(dt, game) {
-    if (!this.context) return;
-    this.engine.frequency.value = 35 + Math.abs(game.car?.speed || 0) * 5;
-    this.engineGain.gain.value = game.car && game.mode === 'play' ? .018 : 0;
-    this.musicClock -= dt;
-    if (this.musicClock <= 0) {
-      this.musicClock = .45;
-      const notes = [130.81, 164.81, 196, 164.81, 110, 146.83, 174.61, 146.83];
-      this.tone(notes[this.beat++ % notes.length], .4, .018, 'triangle');
-      if (game.wanted > 0 && game.police.length) this.tone(this.beat % 2 ? 620 : 850, .4, .018);
+  let sirenBeat = 0;
+  function update(state, dt) {
+    if (!context) return;
+    engineGain.gain.setTargetAtTime(state.player.car ? .15 : 0, context.currentTime, .1);
+    engine.frequency.setTargetAtTime(38 + Math.abs(state.player.car?.speed || 0) * 2.6, context.currentTime, .1);
+    rotorGain.gain.setTargetAtTime(state.helicopter.active ? .1 + Math.sin(state.time * 28) * .07 : 0, context.currentTime, .03);
+    rotor.frequency.value = 51 + Math.sin(state.time * 21) * 16;
+    sirenBeat -= dt;
+    if (state.wanted > 0 && state.police.length && sirenBeat <= 0) {
+      tone(Math.sin(state.time * 4) > 0 ? 680 : 920, .3, .12, 'sine');
+      sirenBeat = .35;
     }
   }
+  return { start, tone, effect, update, get ready() { return !!context; } };
 }
