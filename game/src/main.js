@@ -83,6 +83,7 @@ state.missionIndex = Math.min(state.missionIndex, STORY.length - 1);
 state.missions.start(state.missionIndex);
 const params = new URLSearchParams(location.search);
 const staged = stageScreenshot(state, params);
+if (params.get('debug') === '1') window.solaraDebug = state;
 let running = false;
 let last = performance.now();
 let gameStarted = false;
@@ -147,6 +148,14 @@ function frame(now) {
     return;
   }
   state.time += dt;
+  if (state.screenshotStage) {
+    state.helicopter.update(dt, state);
+    hud.update(dt);
+    view.follow(state, dt);
+    view.draw();
+    input.end();
+    return;
+  }
   if (input.tap('Escape')) { if (state.paused) { state.paused = false; document.querySelector('#menu').innerHTML = ''; } else showPause(); }
   if (input.tap('KeyQ')) { state.radio.cycle(); state.toast(`TUNED TO ${state.radio.current.name}`); }
   if (input.tap('KeyF') && Math.hypot((state.player.car || player).x - GARAGE.x, (state.player.car || player).z - GARAGE.z) < 23) { state.paused = true; openShop(state); }

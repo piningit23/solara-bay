@@ -19,7 +19,7 @@ export function createRenderer() {
   const sun = new THREE.DirectionalLight('#ffe2ac', 3.4);
   sun.position.set(-90, 130, 50);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   Object.assign(sun.shadow.camera, { left: -190, right: 190, top: 190, bottom: -190, near: 1, far: 400 });
   sun.shadow.bias = -.0005;
   scene.add(sun);

@@ -5,6 +5,25 @@ import { box, cylinder, label, material } from './models.js';
 export function buildIslandCity(scene) {
   const random = randomSource();
   const solids = [];
+  const windowCanvas = document.createElement('canvas');
+  windowCanvas.width = 320;
+  windowCanvas.height = 320;
+  const windowContext = windowCanvas.getContext('2d');
+  for (let row = 0; row < 5; row++) {
+    for (let col = 0; col < 5; col++) {
+      const x = 13 + col * 62;
+      const y = 12 + row * 62;
+      windowContext.fillStyle = '#b49e80';
+      windowContext.fillRect(x - 3, y - 3, 42, 46);
+      windowContext.fillStyle = (row + col) % 4 === 0 ? '#dfc28d' : '#477481';
+      windowContext.fillRect(x, y, 36, 40);
+      windowContext.fillStyle = '#b9d2ce';
+      windowContext.fillRect(x + 4, y + 4, 5, 30);
+      windowContext.fillStyle = '#304c54';
+      windowContext.fillRect(x, y + 29, 36, 3);
+    }
+  }
+  const windowMaterial = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(windowCanvas), transparent: true, side: THREE.DoubleSide, depthWrite: false });
   const water = box(scene, 0, -2.7, 0, 2400, 1, 2400, '#209da7', { roughness: .27, metalness: .3 });
   box(scene, 0, -1.1, 0, 390, 2, 390, '#ead29b');
   box(scene, 0, -.12, 0, 348, .2, 348, '#bfc1a9');
@@ -34,14 +53,22 @@ export function buildIslandCity(scene) {
         box(scene, x, height + .3, z, w + .9, .7, d + .9, '#f4dfbd');
         box(scene, x + 3, height + 1, z - 4, 5, 1.6, 4, '#749297');
         solids.push({ x, z, w: w / 2 + .5, d: d / 2 + .5 });
-        for (let y = 3; y < height - 1; y += 3.6) {
-          for (let n = -1; n <= 1; n++) {
-            for (const side of [-1, 1]) {
-              box(scene, x + n * 5.5, y, z + side * (d / 2 + .02), 2.6, 1.8, .06, '#315866', { metalness: .4 });
-              box(scene, x + side * (w / 2 + .02), y, z + n * 5.5, .06, 1.8, 2.6, '#315866');
-            }
-          }
-        }
+        const facade = new THREE.PlaneGeometry(w - 2, height - 3);
+        const front = new THREE.Mesh(facade, windowMaterial);
+        front.position.set(x, height / 2 + .8, z + d / 2 + .04);
+        scene.add(front);
+        const back = new THREE.Mesh(facade, windowMaterial);
+        back.position.set(x, height / 2 + .8, z - d / 2 - .04);
+        scene.add(back);
+        const sideFacade = new THREE.PlaneGeometry(d - 2, height - 3);
+        const left = new THREE.Mesh(sideFacade, windowMaterial);
+        left.position.set(x - w / 2 - .04, height / 2 + .8, z);
+        left.rotation.y = Math.PI / 2;
+        scene.add(left);
+        const right = new THREE.Mesh(sideFacade, windowMaterial);
+        right.position.set(x + w / 2 + .04, height / 2 + .8, z);
+        right.rotation.y = Math.PI / 2;
+        scene.add(right);
         if (random() > .45) {
           box(scene, x, 2.5, z + d / 2 + 1.3, w * .85, .28, 2.8, random() > .5 ? '#dc795f' : '#407f7e');
           label(scene, ['CAFÉ LUNA', 'SOLARA MOTEL', 'MERCADO', 'BAY RECORDS', 'MARINA CLUB'][Math.floor(random() * 5)], x, 4.7, z + d / 2 + .08, w * .8);

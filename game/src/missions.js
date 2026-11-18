@@ -31,7 +31,7 @@ export function createMissions(state) {
     if (current().type === 'crate') {
       crateCount = 0;
       state.crates?.forEach(crate => crate.mesh.visible = true);
-    }
+    } else state.crates?.forEach(crate => crate.mesh.visible = false);
     if (current().type === 'race') checkpoints = RACE_POINTS.map(([x, z]) => ({ x, z }));
     state.save();
   }
