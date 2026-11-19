@@ -2,6 +2,8 @@
 // Copies game/ and screenshots/ into the output directory and writes
 // dossier.json with buildDossier from vendor/makefun-game.ts.
 // Runs on plain Node 22 stdlib only: no installs, no network.
+// Rebuild 2 (2026-11-19): written fresh under the new recording after two
+// sealed recordings failed; the game it hands in is the v3 rebuild.
 
 import { cp, mkdir, readFile, writeFile, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -27,7 +29,12 @@ async function main() {
   if (!(await exists(gameDir))) throw new Error('game/ is missing from the repository');
   await cp(gameDir, join(outDir, 'game'), { recursive: true });
   if (await exists(shotsDir)) {
+    await mkdir(join(outDir, 'screenshots'), { recursive: true });
     await cp(shotsDir, join(outDir, 'screenshots'), { recursive: true });
+  } else {
+    // No screenshots yet: still write an empty folder so the dossier step
+    // sees a consistent tree instead of failing on a missing directory.
+    await mkdir(join(outDir, 'screenshots'), { recursive: true });
   }
   const dossier = await buildDossier(outDir, {
     text_max_bytes: 163840,
