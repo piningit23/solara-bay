@@ -1,99 +1,384 @@
-/* Solara Bay — HUD, menus and overlays. Dark glass panels over the 3D city. */
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1420;
-  font-family: "Segoe UI", Arial, sans-serif; color: #fff; }
-#game-canvas { position: fixed; inset: 0; }
-#game-canvas canvas { display: block; }
+/* Solara Bay — HUD and menu styling. Dark glass panels over the 3D city. */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b1c2c;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #f2f2f2;
+}
+
+#game-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#damage-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(255, 0, 0, 0.55) 100%);
+  z-index: 5;
+}
+
+.hidden { display: none !important; }
 
 /* ---------- HUD ---------- */
-#hud { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 5; }
-#hud-top-left { position: absolute; top: 14px; left: 14px; }
-#hud-cash { font-size: 30px; font-weight: 800; color: #7dff8a; text-shadow: 0 2px 6px #000; }
-#hud-stars { font-size: 26px; letter-spacing: 4px; text-shadow: 0 2px 6px #000; }
-#hud-health-bar { width: 220px; height: 12px; background: rgba(0,0,0,.6); border: 1px solid #fff3;
-  border-radius: 6px; margin-top: 6px; overflow: hidden; }
-#hud-health-fill { height: 100%; width: 100%; background: linear-gradient(90deg,#ff5a4d,#7dff8a); }
-#hud-health-text { font-size: 12px; margin-top: 3px; text-shadow: 0 1px 3px #000; }
-#hud-respect-bar { width: 220px; height: 10px; background: rgba(0,0,0,.6); border: 1px solid #fff3;
-  border-radius: 5px; margin-top: 6px; overflow: hidden; }
-#hud-respect-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#b967ff,#ffd319); }
-#hud-respect-text { font-size: 12px; margin-top: 3px; color: #e8c8ff; text-shadow: 0 1px 3px #000; }
 
-#hud-mission { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-  background: rgba(10,20,32,.78); border: 1px solid #ffd31966; border-radius: 8px;
-  padding: 10px 18px; text-align: center; max-width: 560px; }
-#hud-mission h2 { font-size: 17px; color: #ffd319; letter-spacing: 1px; }
-#hud-objective { font-size: 13px; color: #e8e8e8; margin-top: 4px; }
-#hud-timer { font-size: 20px; color: #ff5a4d; font-weight: 800; margin-top: 4px; display: none; }
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
 
-#hud-right { position: absolute; top: 14px; right: 14px; text-align: right; }
-#minimap { width: 180px; height: 180px; border: 2px solid #ffffff55; border-radius: 8px;
-  background: #0e2a3a; box-shadow: 0 4px 14px rgba(0,0,0,.5); }
-#hud-crew { margin-top: 6px; font-size: 13px; font-weight: 700; color: #b967ff;
-  text-shadow: 0 1px 3px #000; display: none; }
-#hud-caches { margin-top: 4px; font-size: 13px; color: #39ff6a; text-shadow: 0 1px 3px #000; }
+#hud-top-left {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+}
 
-#hud-bottom-left { position: absolute; left: 14px; bottom: 14px; }
-#hud-weapon { font-size: 20px; font-weight: 800; text-shadow: 0 2px 4px #000; }
-#hud-ammo { font-size: 15px; color: #ffd27a; text-shadow: 0 1px 3px #000; }
-#hud-radio { font-size: 14px; color: #7ae2ff; margin-top: 6px; text-shadow: 0 1px 3px #000; }
-#hud-ticker { font-size: 12px; color: #bfeaff; text-shadow: 0 1px 3px #000; }
-#hud-nos-bar { width: 180px; height: 10px; background: rgba(0,0,0,.6); border: 1px solid #fff3;
-  border-radius: 5px; margin-top: 8px; overflow: hidden; }
-#hud-nos-fill { height: 100%; width: 100%; background: linear-gradient(90deg,#05d9e8,#ff2a6d); }
-#hud-nos-label { font-size: 11px; color: #05d9e8; margin-top: 2px; }
+#hud-cash {
+  font-size: 30px;
+  color: #7cff4f;
+}
 
-#hud-speed { position: absolute; right: 16px; bottom: 16px; font-size: 34px; font-weight: 800;
-  text-shadow: 0 2px 6px #000; }
-#hud-prompt { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
-  font-size: 15px; font-weight: 700; color: #fff; background: rgba(0,0,0,.55);
-  padding: 6px 14px; border-radius: 6px; }
-#hud-messages { position: absolute; left: 14px; bottom: 120px; font-size: 13px; line-height: 1.6;
-  text-shadow: 0 1px 3px #000; max-width: 420px; }
-#hud-messages div { background: rgba(0,0,0,.45); padding: 2px 8px; border-radius: 4px; margin-top: 3px; }
+#hud-health {
+  width: 190px;
+  height: 18px;
+  margin-top: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
 
-/* weapon wheel */
-#weapon-wheel { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-  display: none; gap: 10px; }
-.wheel-slot { background: rgba(10,20,32,.85); border: 2px solid #ffffff44; border-radius: 10px;
-  padding: 14px 18px; text-align: center; min-width: 130px; }
-.wheel-slot.active { border-color: #ffd319; background: rgba(60,45,5,.9); }
-.wheel-slot b { display: block; font-size: 15px; }
-.wheel-slot span { font-size: 13px; color: #ffd27a; }
+#hud-health-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #27ae60, #7cff4f);
+}
 
-#damage-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 4; opacity: 0;
-  background: radial-gradient(ellipse at center, transparent 55%, rgba(255,0,0,.55) 100%); }
+#hud-health-text {
+  position: absolute;
+  inset: 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 18px;
+  color: #fff;
+}
 
-/* ---------- screens ---------- */
-.screen { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
-  flex-direction: column; z-index: 10; text-align: center;
-  background: linear-gradient(160deg, rgba(8,20,36,.88), rgba(40,16,60,.82)); }
-.screen h1 { font-size: 64px; letter-spacing: 4px; color: #ffd319;
-  text-shadow: 0 4px 0 #b967ff, 0 8px 24px #000; }
-.screen h2 { font-size: 20px; color: #7ae2ff; margin: 10px 0 4px; }
-.screen p { max-width: 640px; font-size: 15px; line-height: 1.6; color: #e8e8e8; margin: 8px 0; }
-.screen .features { font-size: 14px; color: #cfe8ff; line-height: 1.9; margin: 10px 0; }
-.screen button { pointer-events: auto; font-size: 17px; font-weight: 700; padding: 12px 26px;
-  margin: 6px; border: none; border-radius: 8px; cursor: pointer;
-  background: #ffd319; color: #1a1a22; }
-.screen button:hover { background: #ffe45a; }
-.screen button.secondary { background: #2a4a6a; color: #fff; }
-#title-rank { color: #e8c8ff; font-size: 14px; margin: 6px 0; }
-#mission-select { display: none; margin-top: 10px; max-width: 640px; }
-#mission-select-list button { display: block; width: 100%; font-size: 13px; padding: 7px 12px;
-  margin: 3px 0; text-align: left; background: #1a2a3a; color: #fff; }
-#mission-select-list button:disabled { opacity: .45; cursor: default; }
+#hud-stars {
+  font-size: 26px;
+  letter-spacing: 4px;
+  color: #ffd23f;
+  margin-top: 4px;
+}
 
-/* shop */
-#shop-overlay { display: none; position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%);
-  width: 480px; background: rgba(10,22,36,.96); border: 2px solid #ffd319; border-radius: 12px;
-  padding: 20px; z-index: 20; }
-#shop-list h2 { color: #ffd319; font-size: 20px; margin-bottom: 8px; }
-#shop-list h3 { color: #7ae2ff; font-size: 15px; margin: 14px 0 6px; }
-.shop-cash { color: #7dff8a; font-weight: 700; margin-bottom: 8px; }
-.shop-row { display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 0; border-bottom: 1px solid #ffffff22; font-size: 14px; }
-.shop-row button { background: #ffd319; border: none; border-radius: 6px; padding: 6px 14px;
-  font-weight: 700; cursor: pointer; }
-.shop-row button:disabled { background: #555; color: #aaa; cursor: default; }
-.shop-note { font-size: 12px; color: #aaa; margin-top: 12px; }
+#hud-caches {
+  font-size: 13px;
+  color: #ffd23f;
+  margin-top: 2px;
+}
+
+#hud-top-right {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  text-align: right;
+}
+
+#minimap {
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 6px;
+  background: #123a5c;
+}
+
+#hud-radio {
+  margin-top: 6px;
+  font-size: 16px;
+  color: #00e5ff;
+}
+
+#hud-ticker {
+  font-size: 12px;
+  color: #d8d8d8;
+  font-weight: 400;
+}
+
+#hud-mission {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 620px;
+  text-align: center;
+  font-size: 16px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 210, 63, 0.6);
+  border-radius: 6px;
+  padding: 8px 14px;
+  color: #ffe9a0;
+}
+
+#hud-timer {
+  position: absolute;
+  top: 66px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 20px;
+  color: #ff6a5c;
+}
+
+#hud-bottom-left {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+}
+
+#hud-weapon {
+  font-size: 18px;
+}
+
+#hud-ammo {
+  font-size: 14px;
+  color: #ffd23f;
+}
+
+#hud-nos-label {
+  font-size: 12px;
+  margin-top: 6px;
+  color: #00e5ff;
+}
+
+#hud-nos {
+  width: 170px;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(0, 229, 255, 0.5);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#hud-nos-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #00a5ff, #00e5ff);
+}
+
+#hud-speed {
+  font-size: 22px;
+  margin-top: 4px;
+}
+
+#hud-bottom-right {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  text-align: right;
+}
+
+#hud-respect-text {
+  font-size: 14px;
+  color: #ffb3d9;
+}
+
+#hud-respect {
+  width: 190px;
+  height: 10px;
+  margin-top: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 179, 217, 0.5);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#hud-respect-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #ff2e88, #ffb3d9);
+}
+
+#hud-crew {
+  display: none;
+  margin-top: 6px;
+  font-size: 14px;
+  color: #7cff4f;
+}
+
+#hud-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+  font-size: 17px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  padding: 8px 16px;
+  transition: opacity 0.3s;
+  max-width: 640px;
+  text-align: center;
+}
+
+#hud-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 62px;
+  transform: translateX(-50%);
+  font-size: 13px;
+  color: #d8d8d8;
+  font-weight: 400;
+}
+
+/* ---------- Weapon wheel ---------- */
+
+#weapon-wheel {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 10px;
+  z-index: 20;
+}
+
+.wheel-item {
+  background: rgba(0, 0, 0, 0.75);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.wheel-item.selected {
+  border-color: #ffd23f;
+  color: #ffd23f;
+}
+
+/* ---------- Overlays ---------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 15, 25, 0.72);
+  overflow-y: auto;
+}
+
+.panel {
+  background: rgba(10, 25, 40, 0.94);
+  border: 1px solid rgba(255, 210, 63, 0.55);
+  border-radius: 12px;
+  padding: 28px 34px;
+  max-width: 640px;
+  width: 92%;
+  margin: 20px auto;
+  text-align: center;
+}
+
+.panel h1 {
+  margin: 0 0 8px;
+  font-size: 42px;
+  letter-spacing: 3px;
+  color: #ffd23f;
+}
+
+.panel h2 {
+  margin: 18px 0 6px;
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: #00e5ff;
+}
+
+.panel p {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #e8e8e8;
+}
+
+.features {
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.7;
+  margin: 12px auto;
+  max-width: 520px;
+}
+
+.controls {
+  font-size: 13px;
+  color: #c8d8e8;
+}
+
+.buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+button {
+  background: #ffd23f;
+  color: #14202c;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 22px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) { background: #ffe27a; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+#mission-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mission-item {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-weight: 600;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.mission-item.locked { opacity: 0.45; }
+
+.shop-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  text-align: left;
+  font-size: 14px;
+}
+
+.shop-row small { color: #c8d8e8; }
+.shop-row button { padding: 8px 16px; }

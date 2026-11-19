@@ -1,90 +1,111 @@
-// Solara Bay — safehouse shop. Press F at the garage to open it.
-// Buys Armor, Ammo and Car Repair, plus the three rank-gated garage
-// upgrades (Racing Tires, Armor Plating, Engine). Cash only, persistent.
+// Safehouse shop: open with F at the garage. Buys Armor, Ammo and Car Repair,
+// plus the three garage upgrades — each bought once, persistent in the save,
+// and locked behind its respect rank.
 
-import { G } from './state.js';
 import { SHOP_ITEMS, UPGRADES, WEAPONS } from './config.js';
-import { currentRank } from './respect.js';
+import { rankFor } from './respect.js';
 import { saveGame } from './save.js';
-import { playCash, playHit } from './audio.js';
 
-let open = false;
-
-export function isShopOpen() { return open; }
-
-export function openShop() {
-  open = true;
-  renderShop();
-  const el = document.getElementById('shop-overlay');
-  if (el) el.style.display = 'block';
-}
-
-export function closeShop() {
-  open = false;
-  const el = document.getElementById('shop-overlay');
-  if (el) el.style.display = 'none';
-}
-
-function renderShop() {
-  const list = document.getElementById('shop-list');
-  if (!list) return;
-  const rank = currentRank().name;
-  let html = '<h2>GARAGE SHOP — ' + rank.toUpperCase() + ' RANK</h2>';
-  html += '<p class="shop-cash">Cash: $' + Math.floor(G.cash) + '</p>';
+export function buildShop(G) {
+  const panel = document.getElementById('shop-items');
+  if (!panel) return;
+  panel.innerHTML = '';
   for (const item of SHOP_ITEMS) {
-    html += '<div class="shop-row"><span><b>' + item.name + '</b> — ' + item.desc +
-      '</span><button data-buy="' + item.id + '">$' + item.price + '</button></div>';
+    const row = document.createElement('div');
+    row.className = 'shop-row';
+    row.innerHTML = `<span>${item.name} — $${item.price}<br><small>${item.desc}</small></span>`;
+    const btn = document.createElement('button');
+    btn.textContent = 'BUY';
+    btn.addEventListener('click', () => buyShopItem(G, item));
+    row.appendChild(btn);
+    panel.appendChild(row);
   }
-  html += '<h3>GARAGE UPGRADES</h3>';
   for (const up of UPGRADES) {
-    const owned = !!G.upgrades[up.id];
-    const unlocked = G.respect >= rankMin(up.rank);
-    const label = owned ? 'OWNED' : !unlocked ? 'LOCKED — needs ' + up.rank + ' rank' : '$' + up.price;
-    html += '<div class="shop-row"><span><b>' + up.name + '</b> — ' + up.desc +
-      '</span><button data-upgrade="' + up.id + '" ' + (owned || !unlocked ? 'disabled' : '') + '>' + label + '</button></div>';
+    const row = document.createElement('div');
+    row.className = 'shop-row upgrade';
+    const owned = G.upgrades[up.id];
+    const rankOk = rankFor(G.respect).name === up.rank
+      || rankIndexOf(up.rank) <= rankIndexOf(rankFor(G.respect).name);
+    row.innerHTML = `<span>${up.name} — $${up.price}<br><small>${up.desc} ` +
+      `${owned ? '(OWNED)' : rankOk ? '' : `(requires ${up.rank} rank)`}</small></span>`;
+    const btn = document.createElement('button');
+    btn.textContent = owned ? 'OWNED' : 'BUY';
+    btn.disabled = owned || !rankOk;
+    btn.addEventListener('click', () => buyUpgrade(G, up));
+    row.appendChild(btn);
+    panel.appendChild(row);
   }
-  html += '<p class="shop-note">Press F or Esc to close. Upgrades stay in your save.</p>';
-  list.innerHTML = html;
-  list.querySelectorAll('[data-buy]').forEach((b) => {
-    b.addEventListener('click', () => buyItem(b.getAttribute('data-buy')));
-  });
-  list.querySelectorAll('[data-upgrade]').forEach((b) => {
-    b.addEventListener('click', () => buyUpgrade(b.getAttribute('data-upgrade')));
-  });
+  const cash = document.getElementById('shop-cash');
+  if (cash) cash.textContent = `Cash: $${Math.floor(G.cash)} · Rank: ${rankFor(G.respect).name}`;
 }
 
-function rankMin(name) {
-  return { Drifter: 0, Street: 150, Respected: 400, 'Queen of Solara': 800 }[name] || 0;
+function rankIndexOf(name) {
+  const order = ['Drifter', 'Street', 'Respected', 'Queen of Solara'];
+  return order.indexOf(name);
 }
 
-export function buyItem(id) {
-  const item = SHOP_ITEMS.find((i) => i.id === id);
-  if (!item) return false;
-  if (G.cash < item.price) { G.messages.push('Not enough cash for ' + item.name + '.'); playHit(); return false; }
+function buyShopItem(G, item) {
+  if (G.cash < item.price) {
+    shopMessage(G, 'Not enough cash!');
+    return;
+  }
   G.cash -= item.price;
-  if (id === 'armor') G.armor = Math.min(100, G.armor + 50);
-  if (id === 'ammo') G.weapons.forEach((w, i) => { w.ammo = Math.max(w.ammo, 60); w.mag = WEAPONS[i].mag; });
-  if (id === 'repair' && G.car) G.car.hp = 100;
-  playCash();
-  G.messages.push('Bought ' + item.name + ' for $' + item.price + '.');
-  saveGame();
-  renderShop();
-  return true;
+  if (item.id === 'armorKit') G.health = Math.min(100, G.health + 50);
+  if (item.id === 'ammo') {
+    G.weapons.forEach((slot, i) => {
+      slot.reserve += WEAPONS[i].mag * 3;
+    });
+  }
+  if (item.id === 'repair' && G.car) G.car.health = 100;
+  if (item.id === 'repair' && !G.car) {
+    G.cash += item.price;
+    shopMessage(G, 'No car to repair — steal one first!');
+    return;
+  }
+  if (G.audio) G.audio.chime();
+  shopMessage(G, `${item.name} bought!`);
+  buildShop(G);
+  saveGame(G);
 }
 
-export function buyUpgrade(id) {
-  const up = UPGRADES.find((u) => u.id === id);
-  if (!up || G.upgrades[id]) return false;
-  if (G.respect < rankMin(up.rank)) { G.messages.push(up.name + ' needs ' + up.rank + ' rank.'); return false; }
-  if (G.cash < up.price) { G.messages.push('Not enough cash for ' + up.name + '.'); playHit(); return false; }
+export function buyUpgrade(G, up) {
+  if (G.upgrades[up.id]) return false;
+  if (G.cash < up.price) {
+    shopMessage(G, 'Not enough cash!');
+    return false;
+  }
+  const rankOk = rankIndexOf(rankFor(G.respect).name) >= rankIndexOf(up.rank);
+  if (!rankOk) {
+    shopMessage(G, `Locked — requires ${up.rank} rank. Earn more respect!`);
+    return false;
+  }
   G.cash -= up.price;
-  G.upgrades[id] = true;
-  playCash();
-  G.messages.push('UPGRADE INSTALLED — ' + up.name + '!');
-  saveGame();
-  renderShop();
+  G.upgrades[up.id] = true;
+  if (G.audio) G.audio.chime();
+  shopMessage(G, `${up.name} installed!`);
+  buildShop(G);
+  saveGame(G);
   return true;
 }
 
-// test hook: buy an upgrade programmatically (used by the play-test)
-export function shopState() { return { open, cash: G.cash, upgrades: { ...G.upgrades } }; }
+function shopMessage(G, text) {
+  const el = document.getElementById('shop-message');
+  if (el) el.textContent = text;
+  G.toast = text;
+  G.toastUntil = G.time + 2;
+}
+
+export function openShop(G) {
+  buildShop(G);
+  document.getElementById('shop-screen').classList.remove('hidden');
+  G.shopOpen = true;
+}
+
+export function closeShop(G) {
+  document.getElementById('shop-screen').classList.add('hidden');
+  G.shopOpen = false;
+}
+
+export function nearGarage(G) {
+  return Math.hypot(G.player.x + 140, G.player.z + 140) < 16;
+}

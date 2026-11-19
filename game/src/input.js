@@ -1,42 +1,54 @@
-// Solara Bay — keyboard and mouse input.
-// Tracks held keys, edge-triggered presses, and pointer drag for the camera orbit.
+// Keyboard + mouse input. One object, read by the player, driving and combat
+// modules. Mouse movement orbits the camera; clicking fires the current weapon.
 
-export const keys = {};
-export const pressed = {};   // edge triggers, cleared once per frame by main.js
-export let mouseDX = 0;
-export let mouseDY = 0;
-export let mouseDown = false;
-export let mouseClicked = false;   // left click edge, cleared per frame
+export function createInput() {
+  const input = {
+    keys: new Set(),
+    mouseDX: 0,
+    mouseDY: 0,
+    mouseDown: false,
+    clicked: false,
+    locked: false,
+  };
 
-export function consumeMouse() {
-  const d = { dx: mouseDX, dy: mouseDY, click: mouseClicked };
-  mouseDX = 0; mouseDY = 0; mouseClicked = false;
-  return d;
-}
-
-export function clearPressed() {
-  for (const k of Object.keys(pressed)) delete pressed[k];
-}
-
-export function initInput(canvas) {
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Tab') e.preventDefault();
-    if (!e.repeat) pressed[e.code] = true;
-    keys[e.code] = true;
-    if (e.code === 'KeyR' || e.code === 'KeyQ' || e.code === 'KeyF' || e.code === 'KeyE') e.preventDefault();
+    input.keys.add(e.code);
   });
-  window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-  window.addEventListener('blur', () => {
-    for (const k of Object.keys(keys)) keys[k] = false;
-  });
-  canvas.addEventListener('mousedown', (e) => {
-    mouseDown = true;
-    if (e.button === 0) mouseClicked = true;
-  });
-  window.addEventListener('mouseup', () => { mouseDown = false; });
+  window.addEventListener('keyup', (e) => input.keys.delete(e.code));
+  window.addEventListener('blur', () => input.keys.clear());
   window.addEventListener('mousemove', (e) => {
-    if (mouseDown) { mouseDX += e.movementX || 0; mouseDY += e.movementY || 0; }
+    input.mouseDX += e.movementX || 0;
+    input.mouseDY += e.movementY || 0;
   });
-  // Keep the game usable without pointer lock: dragging orbits the camera.
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('mousedown', (e) => {
+    if (e.button === 0) {
+      input.mouseDown = true;
+      input.clicked = true;
+    }
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (e.button === 0) input.mouseDown = false;
+  });
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
+  return input;
+}
+
+export function keyDown(input, code) {
+  return input.keys.has(code);
+}
+
+// Consume the accumulated mouse delta for this frame.
+export function takeMouse(input) {
+  const dx = input.mouseDX;
+  const dy = input.mouseDY;
+  input.mouseDX = 0;
+  input.mouseDY = 0;
+  return { dx, dy };
+}
+
+export function takeClick(input) {
+  const c = input.clicked;
+  input.clicked = false;
+  return c;
 }

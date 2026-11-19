@@ -1,116 +1,108 @@
-// Solara Bay — deterministic screenshot staging from the URL query string.
-// ?shot=cover | on-foot | police | start  (plus ?seed=N for the city seed).
-// Each value builds one fixed, busy scene so the screenshots are real
-// renders of the game, never edited or composited.
+// Screenshot staging: a deterministic hook the game reads from the URL
+// query string (?shot=cover|street|mission|start). Each value sets up a
+// fixed scene for one screenshot. Real renders of the game, never edited.
 
-import * as THREE from 'three';
-import { G } from './state.js';
-import { setWanted } from './police.js';
-import { spawnHelicopter } from './helicopter.js';
-import { spawnCrew } from './crew.js';
-import { spawnRoadblock } from './police.js';
+import { PLACES } from './config.js';
 import { startMission } from './missions.js';
-import { setDusk } from './world.js';
-import { enterCar, nearestParkedCar } from './driving.js';
-import { setCam } from './player.js';
-import { spawnEnemy } from './combat.js';
-import { GARAGE, LIGHTHOUSE, DOCKS } from './config.js';
+import { spawnDante } from './crew.js';
+import { spawnTaxi, spawnBounty } from './activities.js';
+import { makeCar } from './models.js';
 
-export function applyShot(scene) {
-  const q = new URLSearchParams(window.location.search);
-  const shot = q.get('shot');
-  const seed = Number(q.get('seed') || 1);
-  G.seed = seed;
-  if (!shot) return null;
-
-  if (shot === 'start') {
-    // title screen stays up; nothing to stage in-world
-    return 'start';
+export function readShotParam() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('shot');
+  } catch (err) {
+    return null;
   }
+}
+
+export function applyShot(G, shot) {
+  G.shot = shot;
+  if (!shot) return;
+  if (shot === 'start') {
+    // Title screen only; the game stays on the menu.
+    G.mode = 'title';
+    return;
+  }
+  // All other shots start the game immediately, with audio muted by default
+  // (no user gesture in a headless screenshot run).
+  G.mode = 'playing';
+  document.getElementById('title-screen').classList.add('hidden');
 
   if (shot === 'cover') {
-    // Player driving a stolen car mid-chase on the east ring road (water on
-    // one side, city on the other): 5 stars, helicopter overhead, two police
-    // cars behind, roadblock ahead, Dante beside the player.
-    setDusk(true);
-    const car = nearestParkedCar(500) || G.cars[0];
-    if (car) {
-      car.pos.set(140, 0.3, 40);
-      car.yaw = Math.PI;
-      car.mesh.position.copy(car.pos);
-      car.mesh.rotation.y = car.yaw;
-      enterCar(car);
-      car.speed = 18;
+    // Player driving a stolen car mid-chase: 5 stars, helicopter overhead,
+    // two police cars behind, a roadblock ahead, Dante's car beside the
+    // player, mission banner active. Camera pulled further back and higher
+    // so the player car is clearly visible in frame.
+    G.camBoost = 2.0;
+    G.camPitch = 0.42;
+    G.camYaw = Math.PI;
+    G.player.x = 0;
+    G.player.z = 40;
+    G.player.heading = Math.PI;
+    G.wanted = 5;
+    G.cash = 12450;
+    G.respect = 860;
+    G.cachesFound = 6;
+    const mesh = makeCar(G.THREE, 0xd64545);
+    mesh.position.set(0, 0, 40);
+    G.scene.add(mesh);
+    G.car = { mesh, x: 0, z: 40, heading: Math.PI, speed: 18, health: 100, color: 0xd64545 };
+    G.player.onFoot = false;
+    G.player.car = G.car;
+    if (G.player.mesh) G.player.mesh.visible = false;
+    spawnDante(G.THREE, G, 7, 46);
+    startMission(G, 11); // QUEEN OF SOLARA, the 5-star finale
+    G.wanted = 5;
+    G.missionTimer = 0;
+    // Two police cars flanking behind the player, inside the camera frame.
+    for (const [x, z] of [[-10, 52], [10, 54]]) {
+      const cop = makeCar(G.THREE, 0xf5f5f5, { police: true });
+      cop.position.set(x, 0, z);
+      G.scene.add(cop);
+      G.policeCars.push({ mesh: cop, x, z, heading: Math.PI, speed: 16, lightPhase: 1 });
     }
-    setWanted(5);
-    spawnHelicopter(scene);
-    if (G.heli) {
-      // low and ahead-left so the helicopter is inside the frame
-      G.heli.pos.set(136, 13, 6);
-      G.heli.mesh.position.copy(G.heli.pos);
-      G.heliFrozen = true;
-    }
-    spawnRoadblock();
-    spawnCrew(scene);
-    if (G.crew) {
-      G.crew.pos.set(134, 0.3, 40);
-      G.crew.mesh.position.copy(G.crew.pos);
-      G.crew.yaw = Math.PI;
-      G.crew.mesh.rotation.y = Math.PI;
-    }
-    // mission banner active
-    G.missionIndex = 11;
-    startMission(11);
-    setCam(0, 0.32);
-    G.coverCam = true;
-    G.camBack = 15;
-    G.camHeight = 6.5;
-    return 'cover';
+    return;
   }
 
-  if (shot === 'on-foot') {
-    // Busy street: player on foot at an intersection, traffic and
-    // pedestrians placed ahead so the frame is full.
-    G.player.pos.set(20, 0.3, 60);
-    G.player.yaw = Math.PI;
-    setCam(Math.PI, 0.4);
-    G.camBack = 8;
-    G.camHeight = 4;
-    // pull traffic cars and pedestrians into the frame ahead of the player
-    for (let i = 0; i < 3 && i < G.traffic.length; i++) {
-      const t = G.traffic[i];
-      t.pos.set(20, 0.3, 74 + i * 14);
-      t.mesh.position.copy(t.pos);
-      t.yaw = 0; t.mesh.rotation.y = 0; t.speed = 0;
-    }
-    for (let i = 0; i < 5 && i < G.peds.length; i++) {
-      const p = G.peds[i];
-      p.pos.set(28 + (i % 2) * 3, 0.3, 66 + i * 5);
-      p.mesh.position.copy(p.pos);
-      p.pause = 99;
-    }
-    // a taxi fare marker nearby
-    import('./activities.js').then((a) => a.spawnTaxiFare());
-    return 'on-foot';
+  if (shot === 'street') {
+    // On foot at a clear street crossing: traffic, pedestrians and a taxi
+    // fare marker, with no building or neon sign blocking the camera.
+    G.player.x = 0;
+    G.player.z = 0;
+    G.player.heading = Math.PI / 2;
+    G.camYaw = Math.PI / 2;
+    G.camBoost = 1.2;
+    G.cash = 3200;
+    G.respect = 210;
+    spawnTaxi(G.THREE, G);
+    startMission(G, 0);
+    G.missionActive = false;
+    if (G.taxi) G.waypoint = { x: G.taxi.x, z: G.taxi.z, label: 'TAXI FARE' };
+    return;
   }
 
-  if (shot === 'police') {
-    // Mission moment: harbor crates, police closing in, helicopter in the sky.
-    G.missionIndex = 2;
-    startMission(2);
-    G.player.pos.set(DOCKS.x - 6, 0.3, DOCKS.z + 20);
-    setCam(0.4, 0.35);
-    spawnEnemy(DOCKS.x - 10, DOCKS.z + 14, 60);
-    spawnEnemy(DOCKS.x + 8, DOCKS.z + 10, 60);
-    setWanted(3);
-    spawnHelicopter(scene);
-    if (G.heli) {
-      G.heli.pos.set(DOCKS.x + 6, 10, DOCKS.z - 20);
-      G.heli.mesh.position.copy(G.heli.pos);
-      G.heliFrozen = true;
-    }
-    return 'police';
+  if (shot === 'mission') {
+    // A mission moment: harbor crates, police closing in, helicopter in the sky.
+    G.player.x = PLACES.docks.x - 30;
+    G.player.z = PLACES.docks.z;
+    G.player.heading = Math.PI / 2;
+    G.camYaw = Math.PI / 2;
+    G.camBoost = 1.35;
+    G.wanted = 2;
+    G.cash = 6800;
+    G.respect = 420;
+    startMission(G, 2); // HARBOR HEIST
+    G.wanted = 3; // helicopter visible in the sky
+    spawnBounty(G.THREE, G);
+    // One police car staged ahead of the player, closing in on the docks.
+    const cop = makeCar(G.THREE, 0xf5f5f5, { police: true });
+    cop.position.set(PLACES.docks.x + 18, 0, PLACES.docks.z - 22);
+    G.scene.add(cop);
+    G.policeCars.push({ mesh: cop, x: PLACES.docks.x + 18, z: PLACES.docks.z - 22, heading: 0, speed: 10, lightPhase: 2 });
+    return;
   }
 
-  return shot;
+  // Unknown ?shot= value: just play normally.
 }

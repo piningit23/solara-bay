@@ -1,41 +1,52 @@
-// Solara Bay — respect ranks. Respect is earned from missions, gigs, taxi
-// fares and vigilante takedowns. Ranks unlock garage upgrades.
-// Drifter (0) → Street (150) → Respected (400) → Queen of Solara (800).
+// Respect ranks: points earned from missions, gigs, taxi fares and vigilante
+// takedowns. Ranks gate the garage upgrades.
 
-import { G } from './state.js';
 import { RANKS } from './config.js';
 
 export function rankFor(respect) {
   let rank = RANKS[0];
-  for (const r of RANKS) if (respect >= r.min) rank = r;
+  for (const r of RANKS) {
+    if (respect >= r.min) rank = r;
+  }
   return rank;
 }
 
-export function currentRank() { return rankFor(G.respect); }
+export function rankIndex(respect) {
+  let idx = 0;
+  for (let i = 0; i < RANKS.length; i++) {
+    if (respect >= RANKS[i].min) idx = i;
+  }
+  return idx;
+}
 
-export function nextRank() {
-  for (const r of RANKS) if (G.respect < r.min) return r;
+export function nextRank(respect) {
+  for (const r of RANKS) {
+    if (respect < r.min) return r;
+  }
   return null;
 }
 
-export function respectProgress() {
-  const cur = currentRank();
-  const nxt = nextRank();
-  if (!nxt) return 1;
-  return (G.respect - cur.min) / (nxt.min - cur.min);
-}
-
-export function addRespect(n, reason) {
-  const before = currentRank().name;
-  G.respect += n;
-  const after = currentRank().name;
-  if (after !== before) {
-    G.messages.push('RANK UP — you are now ' + after.toUpperCase() + '!');
-  } else if (reason) {
-    G.messages.push('+' + n + ' respect — ' + reason);
+export function addRespect(G, points, reason) {
+  const before = rankFor(G.respect).name;
+  G.respect += points;
+  const after = rankFor(G.respect).name;
+  if (reason) {
+    G.toast = `+${points} respect — ${reason}`;
+    G.toastUntil = G.time + 2.5;
   }
+  if (after !== before) {
+    G.toast = `RANK UP: you are now ${after.toUpperCase()}!`;
+    G.toastUntil = G.time + 4;
+    if (G.audio) G.audio.chime();
+  }
+  return G.respect;
 }
 
-export function rankUnlocks(rankName) {
-  return RANKS.some((r) => r.name === rankName && G.respect >= r.min);
+// Progress toward the next rank, 0..1, for the HUD respect bar.
+export function respectProgress(G) {
+  const idx = rankIndex(G.respect);
+  const cur = RANKS[idx];
+  const next = RANKS[idx + 1];
+  if (!next) return 1;
+  return Math.max(0, Math.min(1, (G.respect - cur.min) / (next.min - cur.min)));
 }

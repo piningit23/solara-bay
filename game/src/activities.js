@@ -1,149 +1,157 @@
-// Solara Bay — side activities in free roam (and inside the Respect Run):
+// Side activities, free-roam and part of the RESPECT RUN mission:
 // (1) taxi fares, (2) vigilante bounties on a marked criminal car,
-// (3) 10 hidden "sunken cache" packages around the island.
+// (3) ten hidden sunken caches. All pay cash and respect.
 
-import * as THREE from 'three';
-import { G } from './state.js';
-import { CACHE_SPOTS } from './config.js';
-import { makePersonMesh, makeCarMesh, carColor } from './models.js';
-import { roadCoords } from './world.js';
-import { carPos } from './driving.js';
+import { CACHE_SPOTS, PLACES } from './config.js';
+import { makeCache, makeCar, makePerson } from './models.js';
 import { addRespect } from './respect.js';
-import { playCash, playChime } from './audio.js';
-import { addWanted } from './police.js';
 
-let taxiTimer = 0;
-let bountyTimer = 0;
-
-export function spawnTaxiFare() {
-  if (G.taxi) return;
-  const pp = carPos();
-  const cs = roadCoords();
-  const road = cs[Math.floor(Math.random() * cs.length)];
-  const mesh = makePersonMesh(0xffe135, 0x333333);
-  const pos = new THREE.Vector3(pp.x + 14, 0.3, road + 9);
-  mesh.position.copy(pos);
-  G.scene.add(mesh);
-  const dest = { x: (Math.random() * 2 - 1) * 140, z: (Math.random() * 2 - 1) * 140 };
-  G.taxi = { mesh, pos, dest, passenger: false, marker: makeTaxiMarker() };
-  G.taxi.marker.position.set(pos.x, 3, pos.z);
-  G.scene.add(G.taxi.marker);
-  G.messages.push('TAXI FARE — pick up the passenger in yellow.');
+export function spawnCaches(THREE, G) {
+  for (const spot of CACHE_SPOTS) {
+    const mesh = makeCache(THREE);
+    mesh.position.set(spot.x, 0, spot.z);
+    G.scene.add(mesh);
+    G.caches.push({ mesh, x: spot.x, z: spot.z, taken: false });
+  }
 }
 
-function makeTaxiMarker() {
-  const m = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 0.5, 1.6),
-    new THREE.MeshBasicMaterial({ color: 0xffe135 }));
-  m.userData.spin = true;
-  return m;
-}
-
-export function spawnVigilante() {
-  if (G.vigilante) return;
-  const pp = carPos();
-  const mesh = makeCarMesh(0x111111, 'sport');
-  const pos = new THREE.Vector3(pp.x + 40, 0.3, pp.z + 30);
-  mesh.position.copy(pos);
-  G.scene.add(mesh);
-  G.vigilante = { mesh, pos, yaw: 0, speed: 12, hp: 80 };
-  G.messages.push('VIGILANTE BOUNTY — take down the black car. $400 + respect.');
-}
-
-export function updateActivities(dt) {
-  // caches: walk or drive over a glowing package to collect it
-  const pp = carPos();
-  for (let i = 0; i < CACHE_SPOTS.length; i++) {
-    if (G.cacheTaken.includes(i)) continue;
-    const s = CACHE_SPOTS[i];
-    const d = Math.hypot(pp.x - s.x, pp.z - s.z);
-    if (d < 4) {
-      G.cacheTaken.push(i);
-      G.cachesFound = G.cacheTaken.length;
+export function updateCaches(G, dt) {
+  for (const cache of G.caches) {
+    if (cache.taken) continue;
+    cache.mesh.rotation.y += dt * 1.5;
+    cache.mesh.position.y = 0.15 + Math.sin(G.time * 2 + cache.x) * 0.12;
+    const d = Math.hypot(cache.x - G.player.x, cache.z - G.player.z);
+    if (d < 2.6) {
+      cache.taken = true;
+      G.scene.remove(cache.mesh);
+      G.cachesFound += 1;
       G.cash += 250;
-      addRespect(15, 'sunken cache found');
-      playCash();
-      G.messages.push('SUNKEN CACHE ' + G.cachesFound + '/10 — +$250');
-      const m = G.cacheMeshes[i];
-      if (m) m.visible = false;
-    }
-  }
-
-  // taxi: pick up on foot or in the car, then drive to the dest
-  if (G.taxi) {
-    const t = G.taxi;
-    t.marker.rotation.y += dt * 2;
-    if (!t.passenger) {
-      const d = Math.hypot(pp.x - t.pos.x, pp.z - t.pos.z);
-      if (d < 4) {
-        t.passenger = true;
-        G.scene.remove(t.mesh);
-        G.scene.remove(t.marker);
-        t.marker = makeTaxiMarker();
-        t.marker.position.set(t.dest.x, 3, t.dest.z);
-        G.scene.add(t.marker);
-        G.waypoint = { x: t.dest.x, z: t.dest.z };
-        G.messages.push('Passenger aboard — drive to the marker.');
-        playChime();
-      }
-    } else {
-      const d = Math.hypot(pp.x - t.dest.x, pp.z - t.dest.z);
-      if (d < 6 && G.car) {
-        G.cash += 300;
-        addRespect(20, 'taxi fare complete');
-        playCash();
-        G.messages.push('FARE COMPLETE — +$300');
-        G.scene.remove(t.marker);
-        G.taxi = null;
-        G.waypoint = null;
-        if (G.mission) G.mission.gigsDone = (G.mission.gigsDone || 0) + 1;
-      }
-    }
-  } else {
-    taxiTimer -= dt;
-    if (taxiTimer <= 0 && G.mode === 'playing' && !G.mission) {
-      spawnTaxiFare();
-      taxiTimer = 45;
-    }
-  }
-
-  // vigilante bounty car: flees, can be rammed or shot
-  if (G.vigilante) {
-    const v = G.vigilante;
-    const dx = v.pos.x - pp.x;
-    const dz = v.pos.z - pp.z;
-    const dist = Math.hypot(dx, dz);
-    v.yaw = Math.atan2(dx, dz);
-    v.pos.x += Math.sin(v.yaw) * v.speed * dt;
-    v.pos.z += Math.cos(v.yaw) * v.speed * dt;
-    v.pos.x = Math.max(-185, Math.min(185, v.pos.x));
-    v.pos.z = Math.max(-185, Math.min(185, v.pos.z));
-    v.mesh.position.copy(v.pos);
-    v.mesh.rotation.y = v.yaw;
-    if (dist < 3.5 && G.car && Math.abs(G.car.speed) > 6) {
-      v.hp -= 40;
-      G.shake = Math.min(0.5, G.shake + 0.2);
-    }
-    if (v.hp <= 0) {
-      G.scene.remove(v.mesh);
-      G.vigilante = null;
-      G.cash += 400;
-      addRespect(30, 'vigilante takedown');
-      playCash();
-      G.messages.push('BOUNTY DOWN — +$400, +30 respect');
-      G.stats.takedowns++;
-      if (G.mission) G.mission.gigsDone = (G.mission.gigsDone || 0) + 1;
-    }
-  } else {
-    bountyTimer -= dt;
-    if (bountyTimer <= 0 && G.mode === 'playing' && !G.mission && G.wanted === 0) {
-      spawnVigilante();
-      bountyTimer = 60;
+      addRespect(G, 20, 'sunken cache found');
+      if (G.audio) G.audio.chime();
+      G.toast = `Sunken cache found! CACHES ${G.cachesFound}/10 — +$250`;
+      G.toastUntil = G.time + 3;
     }
   }
 }
 
-export function clearActivityMarkers() {
-  if (G.taxi) { G.scene.remove(G.taxi.mesh); G.scene.remove(G.taxi.marker); G.taxi = null; }
-  if (G.vigilante) { G.scene.remove(G.vigilante.mesh); G.vigilante = null; }
+export function spawnTaxi(THREE, G) {
+  if (G.taxi) return;
+  const spots = [
+    { x: 40, z: -40 }, { x: -80, z: 40 }, { x: 120, z: -80 }, { x: 0, z: 120 },
+  ];
+  const spot = spots[Math.floor(Math.random() * spots.length)];
+  const mesh = makePerson(THREE, 0xf1c40f);
+  mesh.position.set(spot.x, 0, spot.z);
+  G.scene.add(mesh);
+  const drop = { x: -120 + Math.random() * 240, z: -120 + Math.random() * 240 };
+  G.taxi = {
+    mesh, x: spot.x, z: spot.z, dropX: drop.x, dropZ: drop.z,
+    pickedUp: false, marker: null,
+  };
+  G.toast = 'TAXI fare waiting — drive to the yellow marker and press E.';
+  G.toastUntil = G.time + 3;
+}
+
+export function updateTaxi(G, dt) {
+  const taxi = G.taxi;
+  if (!taxi) return;
+  // Bob the fare marker so it reads at a glance.
+  taxi.mesh.position.y = Math.abs(Math.sin(G.time * 4)) * 0.15;
+  if (!taxi.pickedUp) {
+    const d = Math.hypot(taxi.x - G.player.x, taxi.z - G.player.z);
+    if (d < 3 && G.car) {
+      taxi.pickedUp = true;
+      G.scene.remove(taxi.mesh);
+      G.waypoint = { x: taxi.dropX, z: taxi.dropZ, label: 'TAXI DROP' };
+      G.toast = 'Passenger aboard — drive to the TAXI DROP marker!';
+      G.toastUntil = G.time + 3;
+    }
+  } else {
+    const d = Math.hypot(taxi.dropX - G.player.x, taxi.dropZ - G.player.z);
+    if (d < 6) {
+      const fare = 120 + Math.floor(Math.random() * 130);
+      G.cash += fare;
+      addRespect(G, 15, 'taxi fare complete');
+      if (G.audio) G.audio.chime();
+      G.toast = `Taxi fare paid: +$${fare}`;
+      G.toastUntil = G.time + 3;
+      if (G.missionActive && G.missionIndex === 9) G.missionGigs.taxi = true;
+      G.taxi = null;
+      G.waypoint = null;
+    }
+  }
+}
+
+export function spawnBounty(THREE, G) {
+  if (G.bounty) return;
+  const mesh = makeCar(THREE, 0x111111);
+  const x = G.player.x + (Math.random() > 0.5 ? 70 : -70);
+  const z = G.player.z + (Math.random() > 0.5 ? 70 : -70);
+  mesh.position.set(x, 0, z);
+  G.scene.add(mesh);
+  G.bounty = { mesh, x, z, heading: Math.random() * Math.PI * 2, speed: 10, health: 120 };
+  G.toast = 'VIGILANTE bounty: a marked criminal car is on the run. Ram or shoot it down!';
+  G.toastUntil = G.time + 3.5;
+}
+
+export function updateBounty(G, dt) {
+  const bounty = G.bounty;
+  if (!bounty) return;
+  // The criminal car flees from the player.
+  const dx = bounty.x - G.player.x;
+  const dz = bounty.z - G.player.z;
+  const dist = Math.hypot(dx, dz) || 1;
+  const targetHeading = Math.atan2(dx, dz);
+  let dh = targetHeading - bounty.heading;
+  while (dh > Math.PI) dh -= Math.PI * 2;
+  while (dh < -Math.PI) dh += Math.PI * 2;
+  bounty.heading += Math.max(-2 * dt, Math.min(2 * dt, dh));
+  bounty.speed = Math.min(24, bounty.speed + 10 * dt);
+  bounty.x += Math.sin(bounty.heading) * bounty.speed * dt;
+  bounty.z += Math.cos(bounty.heading) * bounty.speed * dt;
+  bounty.x = Math.max(-200, Math.min(200, bounty.x));
+  bounty.z = Math.max(-200, Math.min(200, bounty.z));
+  bounty.mesh.position.set(bounty.x, 0, bounty.z);
+  bounty.mesh.rotation.y = bounty.heading;
+  // Ramming it down counts.
+  if (G.car && dist < 3.4 && Math.abs(G.car.speed) > 6) {
+    bounty.health -= 45 * dt;
+    if (G.audio) G.audio.thud();
+  }
+  if (bounty.health <= 0) {
+    G.scene.remove(bounty.mesh);
+    G.bounty = null;
+    G.cash += 400;
+    addRespect(G, 30, 'vigilante takedown');
+    if (G.audio) G.audio.chime();
+    G.toast = 'Bounty down! +$400, +30 respect.';
+    G.toastUntil = G.time + 3;
+    if (G.missionActive && G.missionIndex === 9) G.missionGigs.vigilante = true;
+  }
+}
+
+// A free-roam package pickup, used by the RESPECT RUN gigs.
+export function spawnPickup(THREE, G) {
+  const mesh = makeCache(THREE);
+  const x = PLACES.market.x;
+  const z = PLACES.market.z;
+  mesh.position.set(x, 0, z);
+  G.scene.add(mesh);
+  G.waypoint = { x, z, label: 'PACKAGE PICKUP' };
+  return { mesh, x, z };
+}
+
+export function checkPickup(G, pickup) {
+  if (!pickup) return false;
+  const d = Math.hypot(pickup.x - G.player.x, pickup.z - G.player.z);
+  if (d < 3) {
+    G.scene.remove(pickup.mesh);
+    G.cash += 200;
+    addRespect(G, 15, 'package pickup');
+    if (G.missionActive && G.missionIndex === 9) G.missionGigs.pickup = true;
+    G.toast = 'Package picked up! +$200';
+    G.toastUntil = G.time + 3;
+    return true;
+  }
+  return false;
 }

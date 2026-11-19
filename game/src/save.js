@@ -1,53 +1,58 @@
-// Solara Bay — save to localStorage. Saves cash, mission progress,
-// respect, upgrades and collected caches on mission completion and on
-// the Save button. Continue resumes all of it.
+// Save / load: progress persists in localStorage — cash, respect, caches,
+// upgrades, mission progress and ammo. Continue resumes it all.
 
-import { G } from './state.js';
+import { SAVE_KEY } from './config.js';
 
-const KEY = 'solara-bay-save-v3';
-
-export function saveGame() {
+export function saveGame(G) {
   try {
-    const data = {
+    const save = {
       cash: G.cash,
-      missionIndex: G.missionIndex,
       respect: G.respect,
-      upgrades: G.upgrades,
-      cacheTaken: G.cacheTaken,
       cachesFound: G.cachesFound,
-      station: G.station,
+      upgrades: G.upgrades,
+      missionIndex: G.missionIndex,
+      weapons: G.weapons,
+      health: G.health,
     };
-    localStorage.setItem(KEY, JSON.stringify(data));
+    localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+    G.toast = 'Game saved.';
+    G.toastUntil = G.time + 2;
     return true;
-  } catch (e) { return false; }
+  } catch (err) {
+    G.toast = 'Save failed — storage unavailable.';
+    G.toastUntil = G.time + 2;
+    return false;
+  }
 }
 
-export function loadGame() {
+export function loadGame(G) {
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    G.cash = data.cash || 0;
-    G.missionIndex = data.missionIndex || 0;
-    G.respect = data.respect || 0;
-    G.upgrades = data.upgrades || {};
-    G.cacheTaken = data.cacheTaken || [];
-    G.cachesFound = data.cachesFound || G.cacheTaken.length;
-    G.station = data.station || 0;
-    // hide already-collected caches
-    if (G.cacheMeshes) {
-      for (const i of G.cacheTaken) {
-        if (G.cacheMeshes[i]) G.cacheMeshes[i].visible = false;
-      }
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const save = JSON.parse(raw);
+    if (typeof save.cash === 'number') G.cash = save.cash;
+    if (typeof save.respect === 'number') G.respect = save.respect;
+    if (typeof save.cachesFound === 'number') G.cachesFound = save.cachesFound;
+    if (save.upgrades) G.upgrades = { ...G.upgrades, ...save.upgrades };
+    if (typeof save.missionIndex === 'number') {
+      G.missionIndex = Math.max(0, Math.min(11, save.missionIndex));
     }
-    return data;
-  } catch (e) { return null; }
+    if (Array.isArray(save.weapons)) {
+      save.weapons.forEach((w, i) => {
+        if (G.weapons[i]) G.weapons[i] = { ...G.weapons[i], ...w };
+      });
+    }
+    if (typeof save.health === 'number') G.health = save.health;
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 export function hasSave() {
-  try { return !!localStorage.getItem(KEY); } catch (e) { return false; }
-}
-
-export function clearSave() {
-  try { localStorage.removeItem(KEY); } catch (e) { /* best-effort */ }
+  try {
+    return !!localStorage.getItem(SAVE_KEY);
+  } catch (err) {
+    return false;
+  }
 }

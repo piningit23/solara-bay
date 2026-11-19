@@ -1,204 +1,180 @@
-// Solara Bay — wanted level and police: chasing police cars, on-foot
-// officers, roadblocks at 4–5 stars, and wanted decay when the player hides.
+// Police: chase cars that ram the player, on-foot officers, and roadblocks
+// at 4–5 stars. Wanted level drives how many spawn and how hard they chase.
 
-import * as THREE from 'three';
-import { G } from './state.js';
-import { makePoliceMesh, makePersonMesh } from './models.js';
-import { CITY, GARAGE } from './config.js';
-import { carPos } from './driving.js';
-import { setSiren } from './audio.js';
-import { spawnHelicopter, despawnHelicopter } from './helicopter.js';
+import { makeCar, makePerson } from './models.js';
+import { clampToIsland } from './world.js';
 
-let roadblockTimer = 0;
-
-export function addWanted(stars, reason) {
-  const before = G.wanted;
-  G.wanted = Math.max(0, Math.min(5, G.wanted + stars));
-  G.wantedHeat = 1;
-  if (G.wanted > before && reason) G.messages.push('WANTED +' + stars + ' — ' + reason);
-  syncPolice();
-}
-
-export function setWanted(stars) {
-  G.wanted = Math.max(0, Math.min(5, stars));
-  G.wantedHeat = stars > 0 ? 1 : 0;
-  syncPolice();
-}
-
-function syncPolice() {
-  // helicopter at 3+ stars
-  if (G.wanted >= 3) spawnHelicopter(G.scene);
-  else despawnHelicopter();
-  // police cars: one per wanted star, capped at 4
-  const want = Math.min(4, G.wanted);
-  while (G.police.length < want) spawnPoliceCar();
-  while (G.police.length > want) {
-    const c = G.police.pop();
-    G.scene.remove(c.mesh);
-    const i = G.cars.indexOf(c); if (i >= 0) G.cars.splice(i, 1);
-  }
-  // on-foot officers when the player is on foot and wanted >= 1
-  const wantOfficers = (!G.onFoot || G.wanted === 0) ? 0 : Math.min(3, G.wanted);
-  while (G.officers.length < wantOfficers) spawnOfficer();
-  while (G.officers.length > wantOfficers) {
-    const o = G.officers.pop();
-    G.scene.remove(o.mesh);
-  }
-  setSiren(G.wanted > 0, G.time);
-}
-
-export function spawnPoliceCar() {
-  const pp = carPos();
-  const angle = Math.random() * Math.PI * 2;
-  const mesh = makePoliceMesh();
-  const pos = new THREE.Vector3(
-    Math.max(-180, Math.min(180, pp.x + Math.cos(angle) * 55)),
-    0.3,
-    Math.max(-180, Math.min(180, pp.z + Math.sin(angle) * 55)));
-  mesh.position.copy(pos);
+function spawnPoliceCar(THREE, G, x, z) {
+  const mesh = makeCar(THREE, 0xf5f5f5, { police: true });
+  mesh.position.set(x, 0, z);
   G.scene.add(mesh);
-  const car = { kind: 'police', mesh, pos, yaw: angle, speed: 0, hp: 100, id: 2000 + G.police.length };
-  G.police.push(car);
-  G.cars.push(car);
+  const car = { mesh, x, z, heading: 0, speed: 0, lightPhase: Math.random() * 6 };
+  G.policeCars.push(car);
   return car;
 }
 
-export function spawnOfficer() {
-  const pp = carPos();
-  const mesh = makePersonMesh(0x1a2a5a, 0x1a1a22);
-  const pos = new THREE.Vector3(pp.x + (Math.random() * 30 - 15), 0.3, pp.z + (Math.random() * 30 - 15));
-  mesh.position.copy(pos);
+function spawnOfficer(THREE, G, x, z) {
+  const mesh = makePerson(THREE, 0x1e3a5f);
+  mesh.position.set(x, 0, z);
   G.scene.add(mesh);
-  G.officers.push({ mesh, pos, yaw: 0, speed: 5.5, hp: 60 });
+  const officer = { mesh, x, z, speed: 5.6, hitCooldown: 0 };
+  G.officers.push(officer);
+  return officer;
 }
 
-export function spawnRoadblock() {
-  const pp = carPos();
-  const dir = G.car ? G.car.yaw : G.player.yaw;
-  const aheadX = pp.x + Math.sin(dir) * 34;
-  const aheadZ = pp.z + Math.cos(dir) * 34;
-  clearRoadblocks();
-  for (let i = -1; i <= 1; i++) {
-    const mesh = makePoliceMesh();
-    const px = aheadX + Math.cos(dir) * i * 5;
-    const pz = aheadZ - Math.sin(dir) * i * 5;
-    mesh.position.set(px, 0.3, pz);
-    mesh.rotation.y = dir + Math.PI / 2;
-    G.scene.add(mesh);
-    G.roadblocks.push({ mesh, pos: mesh.position, yaw: dir + Math.PI / 2, hp: 100, kind: 'roadblock' });
+export function policeCountFor(wanted) {
+  if (wanted <= 0) return 0;
+  if (wanted === 1) return 1;
+  if (wanted === 2) return 2;
+  if (wanted === 3) return 3;
+  return 4;
+}
+
+export function updatePolice(G, dt) {
+  const want = policeCountFor(G.wanted);
+  // Spawn chase cars up to the wanted level's count.
+  while (G.policeCars.length < want) {
+    const angle = Math.random() * Math.PI * 2;
+    spawnPoliceCar(G.THREE, G,
+      G.player.x + Math.cos(angle) * 55, G.player.z + Math.sin(angle) * 55);
   }
-  G.messages.push('ROADBLOCK AHEAD — ram it or go around!');
-}
+  while (G.policeCars.length > want) {
+    const car = G.policeCars.pop();
+    G.scene.remove(car.mesh);
+  }
+  // On-foot officers when the player is on foot and wanted.
+  const wantOfficers = G.player.onFoot && G.wanted >= 1 ? Math.min(2, G.wanted) : 0;
+  while (G.officers.length < wantOfficers) {
+    spawnOfficer(G.THREE, G,
+      G.player.x + (Math.random() - 0.5) * 50, G.player.z + (Math.random() - 0.5) * 50);
+  }
+  while (G.officers.length > wantOfficers) {
+    const off = G.officers.pop();
+    G.scene.remove(off.mesh);
+  }
 
-export function clearRoadblocks() {
-  for (const r of G.roadblocks) G.scene.remove(r.mesh);
-  G.roadblocks = [];
-}
-
-function nearGarage() {
-  const pp = carPos();
-  return Math.hypot(pp.x - GARAGE.x, pp.z - GARAGE.z) < 24;
-}
-
-export function updatePolice(dt) {
-  const pp = carPos();
-  const hidden = nearGarage();
-  // wanted decays when out of police sight; faster at the garage safehouse
-  if (G.wanted > 0) {
-    const anyNear = G.police.some((c) => Math.hypot(c.pos.x - pp.x, c.pos.z - pp.z) < 26);
-    if (!anyNear || hidden) {
-      G.wantedHeat -= dt * (hidden ? 0.25 : 0.06);
-      if (G.wantedHeat <= 0) {
-        G.wanted = Math.max(0, G.wanted - 1);
-        G.wantedHeat = G.wanted > 0 ? 1 : 0;
-        if (G.wanted === 0) { G.messages.push('You lost the heat.'); clearRoadblocks(); }
-        syncPolice();
-      }
-    } else {
-      G.wantedHeat = Math.min(1, G.wantedHeat + dt * 0.1);
+  // Chase cars steer toward the player and ram.
+  for (let ci = 0; ci < G.policeCars.length; ci++) {
+    const car = G.policeCars[ci];
+    // Cover staging: hold the chase cars at fixed flanking spots behind the
+    // player so the screenshot keeps them in frame instead of at the camera.
+    if (G.shot === 'cover') {
+      const side = ci % 2 === 0 ? -8 : 8;
+      car.x = G.player.x + side;
+      car.z = G.player.z + 12;
+      car.heading = G.player.heading;
+      car.speed = 16;
+      car.mesh.position.set(car.x, 0, car.z);
+      car.mesh.rotation.y = car.heading;
+      car.lightPhase += dt * 8;
+      const bar = car.mesh.getObjectByName('lightbar');
+      if (bar) bar.material.emissive.setHex(Math.sin(car.lightPhase) > 0 ? 0xff0000 : 0x0000ff);
+      continue;
     }
-  }
-
-  // roadblocks at 4–5 stars, refreshed every 25 s
-  if (G.wanted >= 4) {
-    roadblockTimer -= dt;
-    if (roadblockTimer <= 0 && G.roadblocks.length === 0) {
-      spawnRoadblock();
-      roadblockTimer = 25;
+    const dx = G.player.x - car.x;
+    const dz = G.player.z - car.z;
+    const dist = Math.hypot(dx, dz) || 1;
+    const targetHeading = Math.atan2(dx, dz);
+    let dh = targetHeading - car.heading;
+    while (dh > Math.PI) dh -= Math.PI * 2;
+    while (dh < -Math.PI) dh += Math.PI * 2;
+    car.heading += Math.max(-2.4 * dt, Math.min(2.4 * dt, dh));
+    const top = 22 + G.wanted * 1.6;
+    car.speed = Math.min(top, car.speed + 16 * dt);
+    car.x += Math.sin(car.heading) * car.speed * dt;
+    car.z += Math.cos(car.heading) * car.speed * dt;
+    const clamped = clampToIsland(car.x, car.z);
+    car.x = clamped.x;
+    car.z = clamped.z;
+    car.mesh.position.set(car.x, 0, car.z);
+    car.mesh.rotation.y = car.heading;
+    car.lightPhase += dt * 8;
+    const bar = car.mesh.getObjectByName('lightbar');
+    if (bar) {
+      bar.material.emissive.setHex(Math.sin(car.lightPhase) > 0 ? 0xff0000 : 0x0000ff);
     }
-  } else if (G.roadblocks.length > 0) {
-    clearRoadblocks();
-  }
-
-  // police cars chase and ram
-  for (const car of G.police) {
-    const dx = pp.x - car.pos.x;
-    const dz = pp.z - car.pos.z;
-    const dist = Math.hypot(dx, dz);
-    const targetYaw = Math.atan2(dx, dz);
-    let dy = targetYaw - car.yaw;
-    while (dy > Math.PI) dy -= Math.PI * 2;
-    while (dy < -Math.PI) dy += Math.PI * 2;
-    car.yaw += Math.max(-2.4 * dt, Math.min(2.4 * dt, dy));
-    const top = 24 + G.wanted * 1.5;
-    car.speed = Math.min(top, car.speed + 14 * dt);
-    car.pos.x += Math.sin(car.yaw) * car.speed * dt;
-    car.pos.z += Math.cos(car.yaw) * car.speed * dt;
-    car.mesh.position.copy(car.pos);
-    car.mesh.rotation.y = car.yaw;
-    // ram: damage the player car or the player
-    if (dist < 3.4) {
+    // Ram damage.
+    if (dist < 3.2) {
       if (G.car) {
-        G.car.hp -= 18 * dt * 10;
-        G.shake = Math.min(0.6, G.shake + 0.25);
-        if (G.car.hp <= 0) { G.car.hp = 0; G.car.speed = 0; }
+        G.car.health = Math.max(0, (G.car.health || 100) - 22 * dt);
+        if (G.audio) G.audio.thud();
+        if (G.car.health <= 0) {
+          G.toast = 'Your car is wrecked! Get out and run.';
+          G.toastUntil = G.time + 3;
+        }
       } else {
-        hurtPlayer(12 * dt);
+        G.health -= 14 * dt;
+        if (G.audio) G.audio.thud();
       }
-      car.speed *= 0.5;
-    }
-    // flash the light bar
-    if (car.mesh.userData.lightBars) {
-      const on = Math.floor(G.time * 6) % 2 === 0;
-      car.mesh.userData.lightBars[0].material.emissiveIntensity = on ? 2 : 0.2;
-      car.mesh.userData.lightBars[1].material.emissiveIntensity = on ? 0.2 : 2;
     }
   }
 
-  // officers chase on foot
-  for (const o of G.officers) {
-    const dx = pp.x - o.pos.x;
-    const dz = pp.z - o.pos.z;
-    const dist = Math.hypot(dx, dz);
-    o.yaw = Math.atan2(dx, dz);
-    if (dist > 1.6) {
-      o.pos.x += Math.sin(o.yaw) * o.speed * dt;
-      o.pos.z += Math.cos(o.yaw) * o.speed * dt;
-    } else {
-      hurtPlayer(10 * dt);
+  // Officers chase on foot and beat the player down up close.
+  for (const off of G.officers) {
+    const dx = G.player.x - off.x;
+    const dz = G.player.z - off.z;
+    const dist = Math.hypot(dx, dz) || 1;
+    off.x += (dx / dist) * off.speed * dt;
+    off.z += (dz / dist) * off.speed * dt;
+    off.mesh.position.set(off.x, 0, off.z);
+    off.mesh.rotation.y = Math.atan2(dx, dz);
+    off.hitCooldown -= dt;
+    if (dist < 1.6 && off.hitCooldown <= 0) {
+      G.health -= 8;
+      off.hitCooldown = 1.0;
+      if (G.audio) G.audio.thud();
+      G.toast = 'A cop is beating you down!';
+      G.toastUntil = G.time + 1.5;
     }
-    o.mesh.position.copy(o.pos);
-    o.mesh.rotation.y = o.yaw;
   }
-  setSiren(G.wanted > 0, G.time);
+
+  // Roadblocks at 4–5 stars: 2–3 police cars parked across the road ahead.
+  const wantBlock = G.wanted >= 4;
+  if (wantBlock && G.roadblocks.length === 0) {
+    const ahead = 34;
+    const hx = Math.sin(G.player.heading);
+    const hz = Math.cos(G.player.heading);
+    const bx = G.player.x + hx * ahead;
+    const bz = G.player.z + hz * ahead;
+    const px = Math.cos(G.player.heading);
+    const pz = -Math.sin(G.player.heading);
+    for (let i = -1; i <= 1; i++) {
+      const mesh = makeCar(G.THREE, 0xf5f5f5, { police: true });
+      mesh.position.set(bx + px * i * 5, 0, bz + pz * i * 5);
+      mesh.rotation.y = G.player.heading + Math.PI / 2;
+      G.scene.add(mesh);
+      G.roadblocks.push({ mesh, x: mesh.position.x, z: mesh.position.z });
+    }
+    G.toast = 'ROADBLOCK AHEAD — ram through or go around!';
+    G.toastUntil = G.time + 3;
+  }
+  if (!wantBlock && G.roadblocks.length > 0) {
+    for (const rb of G.roadblocks) G.scene.remove(rb.mesh);
+    G.roadblocks = [];
+  }
+  // Flash the roadblock lightbars too.
+  for (const rb of G.roadblocks) {
+    const bar = rb.mesh.getObjectByName('lightbar');
+    if (bar) bar.material.emissive.setHex(Math.sin(G.time * 9) > 0 ? 0xff0000 : 0x0000ff);
+  }
 }
 
-export function hurtPlayer(amount) {
-  if (G.armor > 0) {
-    const absorbed = Math.min(G.armor, amount);
-    G.armor -= absorbed;
-    amount -= absorbed;
+export function nearestPoliceDistance(G) {
+  let best = Infinity;
+  for (const car of G.policeCars) {
+    best = Math.min(best, Math.hypot(car.x - G.player.x, car.z - G.player.z));
   }
-  G.health -= amount;
-  G.shake = Math.min(0.7, G.shake + 0.2);
-  if (G.health <= 0) {
-    G.health = 0;
-    G.busted = true;
-    G.mode = 'busted';
+  for (const off of G.officers) {
+    best = Math.min(best, Math.hypot(off.x - G.player.x, off.z - G.player.z));
   }
+  return best;
 }
 
-export function bustPlayer() {
-  G.busted = true;
-  G.mode = 'busted';
+export function clearPolice(G) {
+  for (const car of G.policeCars) G.scene.remove(car.mesh);
+  for (const off of G.officers) G.scene.remove(off.mesh);
+  for (const rb of G.roadblocks) G.scene.remove(rb.mesh);
+  G.policeCars = [];
+  G.officers = [];
+  G.roadblocks = [];
 }

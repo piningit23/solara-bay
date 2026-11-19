@@ -1,20 +1,12 @@
-# SOLARA BAY
-
 [![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![rank](https://make.fun/badge/gta6-01/piningit23/solara-bay/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/piningit23/solara-bay/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-**SOLARA BAY: island-city crime game — 12 story missions, 5-star police and helicopter chases, crew and respect ranks, garage upgrades, car radio, safehouse saves**
+# Solara Bay
 
-An original open-world crime game built for make.fun's "Make GTA 6" bounty (gta6-01).
-Mara Vale owes the harbor crew. One week to pay it back: steal cars, run drops, dodge
-five stars of heat, recruit Dante Reyes, and take the lighthouse to become Queen of Solara.
+SOLARA BAY: island-city crime game — 12 story missions, 5-star police and helicopter chases, crew and respect ranks, garage upgrades, car radio, safehouse saves.
 
-The island city has streets full of traffic and pedestrians, a beach promenade with palms,
-two bridges, a lighthouse, a neon strip, a harbor with armed dock crews, and a garage
-safehouse with a shop. Four weapons, a weapon wheel, NOS boost, a 3-station synthesized
-car radio, police chases with a helicopter and roadblocks, taxi fares, vigilante bounties,
-and 10 hidden sunken caches — all in plain static files with Three.js, no build step.
+Mara Vale owes the harbor crew. Across 12 story missions she steals cars, runs deliveries, fights the dock crew, escapes 5-star heat and takes the crown of Solara Bay — an original island city with a beach promenade, a neon strip, docks, two bridges and a lighthouse. Steal and drive cars, dodge traffic and pedestrians, lose the police (or ram through their roadblocks), recruit Dante Reyes to your crew, earn respect ranks, buy garage upgrades, tune the car radio, and hunt 10 hidden sunken caches.
 
 ## Run it
 
@@ -22,8 +14,8 @@ and 10 hidden sunken caches — all in plain static files with Three.js, no buil
 node serve.ts
 ```
 
-Then open http://127.0.0.1:8080 in a desktop browser.
+Then open http://127.0.0.1:8080 in a desktop browser. Keyboard + mouse, no build step, no network requests at runtime.
 
-Controls: WASD move / drive • mouse drag orbits the camera • Shift run / NOS boost •
-E steal & exit car • click shoot • 1–4 weapons • Tab weapon wheel • R reload •
-Q radio • F shop at the garage • Esc pause • M start mission.
+## Controls
+
+WASD move / drive · Mouse orbit camera · Shift run / NOS boost · Space brake · E steal / exit car · F shop at garage · Q radio · 1–4 weapons · Tab weapon wheel · R reload · Click shoot · Esc pause.
