@@ -1,48 +1,47 @@
-// Solara Bay — make.fun gta6-01 entry program (Node 22, standard library only).
-// It copies this repository's game/ and screenshots/ beside this file into the
-// output directory and writes /output/dossier.json, the summary the judge reads,
-// using the vendored make.fun library. No network, no build step, no installs.
-// The program runs twice and both runs must write the same bytes, so it does
-// nothing time- or random-dependent: it only copies files and builds the dossier.
-//
-// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// Solara Bay — make.fun entry program (gta6-01).
+// Copies game/ and screenshots/ into the output directory and writes
+// dossier.json with buildDossier from vendor/makefun-game.ts.
+// Runs on plain Node 22 stdlib only: no installs, no network.
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { cp, mkdir, readFile, writeFile, readdir, stat } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-const here = fileURLToPath(new URL('.', import.meta.url));
-const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const here = dirname(fileURLToPath(import.meta.url));
+const outDir = process.env.MAKEFUN_OUTPUT_DIR || '/output';
 
-// Fail loudly, with a readable message, if the entry folders are missing,
-// instead of dying inside cpSync with a bare filesystem error.
-for (const needed of ['game', 'screenshots']) {
-  if (!existsSync(join(here, needed))) {
-    throw new Error(`Solara Bay entry is missing ./${needed}/ beside main.ts — nothing to hand in.`);
+async function exists(path) {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
   }
 }
 
-mkdirSync(out, { recursive: true });
-cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
-mkdirSync(join(out, 'screenshots'), { recursive: true });
-if (existsSync(join(here, 'screenshots'))) {
-  cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
-}
-
-// The scorer's own caps (reference/gate.json): only text_max_bytes shapes the bytes;
-// the others refuse an entry the scorer would refuse (more than 4 screenshots or one
-// over 256 KiB; more than 993 files in game/ or 48 MiB of game files in all, or a
-// path under game/ over 1000 bytes: game/ counts beside /output's own 1000-entry cap,
-// its screenshots/ and dossier.json).
-writeFileSync(
-  join(out, 'dossier.json'),
-  buildDossier(out, {
+async function main() {
+  await mkdir(outDir, { recursive: true });
+  const gameDir = join(here, 'game');
+  const shotsDir = join(here, 'screenshots');
+  if (!(await exists(gameDir))) throw new Error('game/ is missing from the repository');
+  await cp(gameDir, join(outDir, 'game'), { recursive: true });
+  if (await exists(shotsDir)) {
+    await cp(shotsDir, join(outDir, 'screenshots'), { recursive: true });
+  }
+  const dossier = await buildDossier(outDir, {
     text_max_bytes: 163840,
     screenshots: { max: 4, max_bytes: 262144 },
     game_max_files: 993,
     game_max_bytes: 50331648,
     game_path_max_bytes: 1000,
-  }),
-);
+  });
+  await writeFile(join(outDir, 'dossier.json'), dossier, 'utf8');
+  const names = await readdir(join(outDir, 'screenshots')).catch(() => []);
+  console.log(`Solara Bay v3: wrote ${outDir} (${names.length} screenshots)`);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

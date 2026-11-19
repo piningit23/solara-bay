@@ -1,67 +1,48 @@
-// Car radio: three synthesized stations with clearly different music patterns.
-// All music is generated with WebAudio oscillators — no audio files.
+// Solara Bay — car radio: 3 synthesized stations, Q cycles them.
+// Each station has its own tempo, waveform feel and ticker lines.
 
-import { STATIONS } from './config.js';
-
-// Pentatonic-ish step tables, in semitones from each station's root.
-const PATTERNS = {
-  chill: [0, 3, 5, 7, 10, 12, 10, 7, 5, 3, 0, -2],
-  rock: [0, 0, 12, 0, 10, 0, 7, 5, 3, 0, 12, 10],
-  night: [0, 0, 0, 7, 0, 10, 12, 10, 7, 3, 0, -5],
-};
-
-const WAVE = { chill: 'sine', rock: 'square', night: 'triangle' };
+export const STATIONS = [
+  {
+    id: 0, name: 'BAY FM 88', genre: 'chill synthwave',
+    songs: ['Sunset Over Solara — The Palms', 'Harbor Lights — Marina Blue', 'Slow Tide — Coral Static'],
+  },
+  {
+    id: 1, name: 'SOLARA ROCK 101', genre: 'driving rock riff',
+    songs: ['Asphalt Heart — The Breakers', 'Full Throttle — Neon Coast', 'Redline — V8 Sunday'],
+  },
+  {
+    id: 2, name: 'HARBOR NIGHT 76', genre: 'moody night bass',
+    songs: ['Low Tide — Dockside Ghost', 'Neon Rain — Velvet Pier', 'Last Ferry — Midnight Union'],
+  },
+];
 
 export function createRadio(audio) {
   const radio = {
-    index: 0,
-    step: 0,
-    nextNoteAt: 0,
-    ticker: '',
-    songs: [
-      'Midnight Palms — The Breakers',
-      'Salt Air — Marina Lights',
-      'Island Loop — DJ Coral',
-      'Harbor Glow — Night Ferry',
-    ],
+    station: 0,
     songIndex: 0,
+    on: true,
+    songTimer: 0,
   };
 
-  radio.station = function station() {
-    return STATIONS[radio.index];
+  radio.current = () => STATIONS[radio.station];
+  radio.song = () => radio.current().songs[radio.songIndex];
+
+  radio.cycle = () => {
+    radio.station = (radio.station + 1) % STATIONS.length;
+    radio.songIndex = (radio.songIndex + 1) % 3;
+    audio.startMusic(radio.station);
+    return radio.current().name;
   };
 
-  radio.cycle = function cycle() {
-    radio.index = (radio.index + 1) % STATIONS.length;
-    radio.step = 0;
-    radio.songIndex = (radio.songIndex + 1) % radio.songs.length;
-    radio.ticker = `${radio.station().name} — now playing: ${radio.songs[radio.songIndex]}`;
-    return radio.station();
-  };
+  radio.start = () => { audio.startMusic(radio.station); };
 
-  // Schedule notes ahead of time; call every frame while playing.
-  radio.tick = function tick(now) {
-    if (!audio.started) return;
-    const st = radio.station();
-    const beat = 60 / st.bpm;
-    if (radio.nextNoteAt < audio.ctx.currentTime) {
-      radio.nextNoteAt = audio.ctx.currentTime + 0.05;
-    }
-    while (radio.nextNoteAt < audio.ctx.currentTime + 0.25) {
-      const steps = PATTERNS[st.mood];
-      const semitone = steps[radio.step % steps.length];
-      const freq = st.root * Math.pow(2, semitone / 12);
-      const dur = beat * 0.9;
-      audio.note(freq, dur, WAVE[st.mood], st.mood === 'rock' ? 0.12 : 0.18, radio.nextNoteAt);
-      // A low root note under every fourth step keeps the groove grounded.
-      if (radio.step % 4 === 0) {
-        audio.note(st.root / 2, beat * 1.8, 'sine', 0.2, radio.nextNoteAt);
-      }
-      radio.step += 1;
-      radio.nextNoteAt += beat;
+  radio.update = (dt) => {
+    radio.songTimer += dt;
+    if (radio.songTimer > 24) {
+      radio.songTimer = 0;
+      radio.songIndex = (radio.songIndex + 1) % 3;
     }
   };
 
-  radio.ticker = `${radio.station().name} — now playing: ${radio.songs[0]}`;
   return radio;
 }

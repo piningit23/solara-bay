@@ -1,81 +1,78 @@
-// The single shared game state. Every module reads and writes this object,
-// so there is one place to see what the game is doing right now.
+// Solara Bay — the one shared mutable game state object.
+// Every module reads and writes through this so nothing drifts apart.
 
 import { WEAPONS } from './config.js';
 
 export function createState() {
   return {
-    // Flow: 'title' | 'playing' | 'paused' | 'busted' | 'ended'
-    mode: 'title',
+    // flow: 'title' | 'playing' | 'paused' | 'busted' | 'ended'
+    screen: 'title',
     time: 0,
-    dusk: false,
-    cash: 200,
+    dayTime: 0.55,            // 0..1 sun position; dusk when < 0.3 or night missions
+    night: false,
+    cash: 250,
     health: 100,
+    armor: 0,
     wanted: 0,
-    wantedHeat: 0, // 0..1, builds while police can see the player
+    wantedFloat: 0,
+    hiddenTimer: 0,
     respect: 0,
-    cachesFound: 0,
-    upgrades: { tires: false, armor: false, engine: false },
-    missionIndex: 0, // 0-based into MISSIONS; 12 means the story is done
-    missionActive: false,
-    missionStep: 0,
+    caches: 0,
+    cacheFound: [],
+    missionIndex: 0,          // 0-based into MISSIONS
+    missionStage: 0,
     missionTimer: 0,
-    missionCrates: 0,
-    missionGuardsDown: 0,
-    missionGigs: { taxi: false, vigilante: false, pickup: false },
-    missionCheckpoints: [],
-    missionCheckpoint: 0,
-    missionDone: false,
-    // Player on foot
-    player: {
-      x: -140, z: -120, heading: 0, speed: 0,
-      onFoot: true, car: null, mesh: null,
-    },
-    // The car the player is driving (null on foot)
-    car: null,
-    // Weapon state, one entry per weapon in WEAPONS
-    weapons: WEAPONS.map((w) => ({ id: w.id, ammo: w.mag, reserve: w.mag * 3 })),
-    weaponIndex: 0,
-    wheelOpen: false,
+    missionActive: false,
+    missionDone: [],
+    selectedMission: 0,
+    onFoot: true,
+    playerPos: { x: -40, z: -40 },
+    playerAngle: 0,
+    cameraAngle: 0,
+    cameraPitch: 0.32,
+    car: null,                // the car the player is driving
+    carSpeed: 0,
     nos: 100,
     boosting: false,
-    // Entities the world updates
-    traffic: [],
-    peds: [],
-    policeCars: [],
-    officers: [],
-    roadblocks: [],
-    guards: [],
-    crates: [],
-    caches: [],
-    parkedCars: [],
-    taxi: null,
-    bounty: null,
-    dante: null, // crew ally, { mesh, car, active }
-    heli: null,
-    particles: [],
-    // Waypoint the mission banner points at
-    waypoint: null,
-    // Camera orbit offsets from the mouse
-    camYaw: 0,
-    camPitch: 0.32,
-    camBoost: 1, // staging can pull the camera further back
-    // Transient messages
-    toast: '',
-    toastUntil: 0,
+    weaponIndex: 0,
+    weapons: WEAPONS.map((w) => ({ ...w, ammoLeft: w.ammo })),
+    wheelOpen: false,
+    shopOpen: false,
+    shopTab: 'items',
+    upgrades: { tires: false, armor: false, engine: false },
+    danteActive: false,
+    dantePos: { x: -30, z: -30 },
+    danteHealth: 100,
+    taxi: null,               // { pickup:{x,z}, drop:{x,z}, passenger:false }
+    vigilante: null,          // { car, alive }
+    cratesLeft: 0,
+    guardsLeft: 0,
+    checkpoints: [],          // race checkpoints [{x,z,hit}]
+    checkpointIndex: 0,
+    gigs: { taxi: false, vigilante: false, package: false },
+    message: '',
+    messageTimer: 0,
+    banner: '',
+    bannerTimer: 0,
+    kills: 0,
     bustedReason: '',
-    // Three.js handles, filled in by main.js
-    scene: null,
-    camera: null,
-    renderer: null,
-    sun: null,
-    hemi: null,
-    world: null,
-    // Subsystem handles
-    audio: null,
-    radio: null,
-    input: null,
-    shot: null, // ?shot= value, or null
-    seed: 1,
+    endingText: '',
+    shotsFired: 0,
+    carsStolen: 0,
+    save: null,
   };
+}
+
+export function rankFor(respect) {
+  if (respect >= 800) return 'Queen of Solara';
+  if (respect >= 400) return 'Respected';
+  if (respect >= 150) return 'Street';
+  return 'Drifter';
+}
+
+export function rankIndexFor(respect) {
+  if (respect >= 800) return 3;
+  if (respect >= 400) return 2;
+  if (respect >= 150) return 1;
+  return 0;
 }

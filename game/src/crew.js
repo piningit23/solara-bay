@@ -1,90 +1,85 @@
-// Crew ally: Dante Reyes. During crew missions (9 and 12) he follows the
-// player in his own car, rams chasing police cars and shoots at enemies on
-// foot. He shows as a "D" marker on the minimap and a DANTE — CREW indicator
-// on the HUD, and his car is staged beside the player's in the cover shot.
+// Solara Bay — crew ally Dante Reyes: follows the player in crew missions,
+// rams chasing police cars, shoots at enemies on foot, shows as "D" on the map.
 
-import { makeCar, makePerson } from './models.js';
+import * as THREE from 'three';
+import { makeCarMesh, makePersonMesh } from './models.js';
 
-const DANTE_COLOR = 0x8e44ad;
-
-export function spawnDante(THREE, G, x, z) {
-  if (G.dante) return G.dante;
-  const mesh = makeCar(THREE, DANTE_COLOR);
-  mesh.position.set(x, 0, z);
-  G.scene.add(mesh);
-  const driver = makePerson(THREE, 0x2c3e50);
-  driver.position.set(x + 3, 0, z);
-  G.scene.add(driver);
-  G.dante = {
-    mesh, driver, x, z, heading: 0, speed: 0, active: true,
-    shootCooldown: 0,
+export function createCrew(scene) {
+  const carMesh = makeCarMesh(0xffd700, false);
+  carMesh.visible = false;
+  scene.add(carMesh);
+  const footMesh = makePersonMesh(0xffd700, 0xd9a066);
+  footMesh.visible = false;
+  scene.add(footMesh);
+  return {
+    scene,
+    carMesh,
+    footMesh,
+    active: false,
+    inCar: true,
+    speed: 0,
+    shootTimer: 0,
   };
-  return G.dante;
 }
 
-export function despawnDante(G) {
-  if (!G.dante) return;
-  G.scene.remove(G.dante.mesh);
-  G.scene.remove(G.dante.driver);
-  G.dante = null;
-}
-
-export function updateCrew(G, dt) {
-  const dante = G.dante;
-  if (!dante || !dante.active) return;
-  // Cover staging: keep Dante's car parked beside the player in frame.
-  if (G.shot === 'cover') {
-    dante.x = G.player.x + 6;
-    dante.z = G.player.z + 6;
-    dante.heading = G.player.heading;
-    dante.mesh.position.set(dante.x, 0, dante.z);
-    dante.mesh.rotation.y = dante.heading;
-    dante.driver.position.set(dante.x + 3, 0, dante.z);
-    return;
+export function setCrewActive(crew, state, active, atPos) {
+  crew.active = active;
+  state.danteActive = active;
+  crew.carMesh.visible = active;
+  crew.footMesh.visible = false;
+  crew.inCar = true;
+  if (active && atPos) {
+    crew.carMesh.position.set(atPos.x + 4, 0, atPos.z + 4);
+    state.dantePos = { x: atPos.x + 4, z: atPos.z + 4 };
   }
-  // Follow a point just behind and beside the player.
-  const followX = G.player.x - Math.sin(G.player.heading) * 7 + Math.cos(G.player.heading) * 5;
-  const followZ = G.player.z - Math.cos(G.player.heading) * 7 - Math.sin(G.player.heading) * 5;
-  const dx = followX - dante.x;
-  const dz = followZ - dante.z;
-  const dist = Math.hypot(dx, dz) || 1;
-  const targetHeading = Math.atan2(dx, dz);
-  let dh = targetHeading - dante.heading;
-  while (dh > Math.PI) dh -= Math.PI * 2;
-  while (dh < -Math.PI) dh += Math.PI * 2;
-  dante.heading += Math.max(-2.6 * dt, Math.min(2.6 * dt, dh));
-  const top = dist > 25 ? 30 : 20;
-  dante.speed = Math.min(top, dante.speed + 18 * dt);
-  if (dist < 3) dante.speed = Math.max(0, dante.speed - 20 * dt);
-  dante.x += Math.sin(dante.heading) * dante.speed * dt;
-  dante.z += Math.cos(dante.heading) * dante.speed * dt;
-  dante.mesh.position.set(dante.x, 0, dante.z);
-  dante.mesh.rotation.y = dante.heading;
-  dante.driver.position.set(dante.x + 3, 0, dante.z);
-  // Ram chasing police cars that get close to the player.
-  for (const cop of G.policeCars) {
-    const cd = Math.hypot(cop.x - dante.x, cop.z - dante.z);
-    if (cd < 4) {
-      const push = Math.atan2(cop.x - dante.x, cop.z - dante.z);
-      cop.x += Math.sin(push) * 26 * dt;
-      cop.z += Math.cos(push) * 26 * dt;
-      cop.speed = Math.max(4, cop.speed - 14 * dt);
-      if (G.audio) G.audio.thud();
+}
+
+export function updateCrew(crew, dt, state, playerPos, police, enemies) {
+  if (!crew.active) return;
+  const mesh = crew.inCar ? crew.carMesh : crew.footMesh;
+  const dx = playerPos.x - mesh.position.x;
+  const dz = playerPos.z - mesh.position.z;
+  const dist = Math.hypot(dx, dz);
+  // Follow: keep about 6 units behind the player
+  if (dist > 8) {
+    const targetAngle = Math.atan2(dx, dz);
+    let diff = targetAngle - mesh.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    mesh.rotation.y += Math.max(-2.6 * dt, Math.min(2.6 * dt, diff));
+    const speed = Math.min(30, 12 + dist * 0.5);
+    mesh.position.x += Math.sin(mesh.rotation.y) * speed * dt;
+    mesh.position.z += Math.cos(mesh.rotation.y) * speed * dt;
+  }
+  state.dantePos = { x: mesh.position.x, z: mesh.position.z };
+  // Ram chasing police cars that get close to the player
+  for (const car of police.cars) {
+    const cd = Math.hypot(car.mesh.position.x - playerPos.x, car.mesh.position.z - playerPos.z);
+    const dd = Math.hypot(car.mesh.position.x - mesh.position.x, car.mesh.position.z - mesh.position.z);
+    if (cd < 12 && dd < 3.5) {
+      // shove the police car away from the player
+      const push = 26 * dt;
+      const ax = (car.mesh.position.x - playerPos.x) / (cd || 1);
+      const az = (car.mesh.position.z - playerPos.z) / (cd || 1);
+      car.mesh.position.x += ax * push * 4;
+      car.mesh.position.z += az * push * 4;
     }
   }
-  // Shoot at mission guards on foot while Dante is active.
-  dante.shootCooldown -= dt;
-  if (dante.shootCooldown <= 0 && G.guards.length > 0) {
-    const guard = G.guards[0];
-    const gd = Math.hypot(guard.x - dante.x, guard.z - dante.z);
-    if (gd < 55) {
-      guard.health -= 18;
-      dante.shootCooldown = 1.4;
-      if (G.audio) G.audio.shot('pistol');
-      if (guard.health <= 0) {
-        G.scene.remove(guard.mesh);
-        G.guards.splice(G.guards.indexOf(guard), 1);
-        G.missionGuardsDown += 1;
+  // Shoot at enemies when on foot
+  if (!crew.inCar && enemies && enemies.length) {
+    crew.shootTimer -= dt;
+    if (crew.shootTimer <= 0) {
+      crew.shootTimer = 0.7;
+      let nearest = null;
+      let best = 40;
+      for (const e of enemies) {
+        if (e.dead) continue;
+        const d = Math.hypot(e.mesh.position.x - mesh.position.x, e.mesh.position.z - mesh.position.z);
+        if (d < best) { best = d; nearest = e; }
+      }
+      if (nearest) {
+        nearest.health -= 20;
+        if (nearest.health <= 0) nearest.dead = true;
       }
     }
   }

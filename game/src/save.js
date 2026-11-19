@@ -1,58 +1,52 @@
-// Save / load: progress persists in localStorage — cash, respect, caches,
-// upgrades, mission progress and ammo. Continue resumes it all.
+// Solara Bay — save to localStorage: cash, missions, wanted, respect,
+// upgrades, caches. Continue resumes the run.
 
-import { SAVE_KEY } from './config.js';
+const KEY = 'solara-bay-save-v3';
 
-export function saveGame(G) {
+export function saveGame(state) {
   try {
-    const save = {
-      cash: G.cash,
-      respect: G.respect,
-      cachesFound: G.cachesFound,
-      upgrades: G.upgrades,
-      missionIndex: G.missionIndex,
-      weapons: G.weapons,
-      health: G.health,
+    const data = {
+      cash: state.cash,
+      missionIndex: state.missionIndex,
+      missionDone: state.missionDone,
+      respect: state.respect,
+      upgrades: state.upgrades,
+      caches: state.caches,
+      cacheFound: state.cacheFound,
+      carsStolen: state.carsStolen,
+      kills: state.kills,
     };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(save));
-    G.toast = 'Game saved.';
-    G.toastUntil = G.time + 2;
+    localStorage.setItem(KEY, JSON.stringify(data));
     return true;
-  } catch (err) {
-    G.toast = 'Save failed — storage unavailable.';
-    G.toastUntil = G.time + 2;
+  } catch (e) {
     return false;
   }
 }
 
-export function loadGame(G) {
+export function loadGame() {
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return false;
-    const save = JSON.parse(raw);
-    if (typeof save.cash === 'number') G.cash = save.cash;
-    if (typeof save.respect === 'number') G.respect = save.respect;
-    if (typeof save.cachesFound === 'number') G.cachesFound = save.cachesFound;
-    if (save.upgrades) G.upgrades = { ...G.upgrades, ...save.upgrades };
-    if (typeof save.missionIndex === 'number') {
-      G.missionIndex = Math.max(0, Math.min(11, save.missionIndex));
-    }
-    if (Array.isArray(save.weapons)) {
-      save.weapons.forEach((w, i) => {
-        if (G.weapons[i]) G.weapons[i] = { ...G.weapons[i], ...w };
-      });
-    }
-    if (typeof save.health === 'number') G.health = save.health;
-    return true;
-  } catch (err) {
-    return false;
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
   }
+}
+
+export function applySave(state, data) {
+  if (!data) return false;
+  state.cash = data.cash ?? state.cash;
+  state.missionIndex = data.missionIndex ?? 0;
+  state.missionDone = data.missionDone || [];
+  state.respect = data.respect ?? 0;
+  state.upgrades = { ...state.upgrades, ...(data.upgrades || {}) };
+  state.caches = data.caches ?? 0;
+  state.cacheFound = data.cacheFound || [];
+  state.carsStolen = data.carsStolen ?? 0;
+  state.kills = data.kills ?? 0;
+  return true;
 }
 
 export function hasSave() {
-  try {
-    return !!localStorage.getItem(SAVE_KEY);
-  } catch (err) {
-    return false;
-  }
+  return loadGame() !== null;
 }

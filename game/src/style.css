@@ -1,384 +1,61 @@
-/* Solara Bay — HUD and menu styling. Dark glass panels over the 3D city. */
-
-* { box-sizing: border-box; }
-
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #0b1c2c;
-  font-family: 'Segoe UI', system-ui, sans-serif;
-  color: #f2f2f2;
-}
-
-#game-canvas {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-#damage-vignette {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  background: radial-gradient(ellipse at center, transparent 55%, rgba(255, 0, 0, 0.55) 100%);
-  z-index: 5;
-}
-
-.hidden { display: none !important; }
-
-/* ---------- HUD ---------- */
-
-#hud {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 10;
-  font-weight: 600;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-}
-
-#hud-top-left {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-}
-
-#hud-cash {
-  font-size: 30px;
-  color: #7cff4f;
-}
-
-#hud-health {
-  width: 190px;
-  height: 18px;
-  margin-top: 6px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 4px;
-  position: relative;
-  overflow: hidden;
-}
-
-#hud-health-fill {
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, #27ae60, #7cff4f);
-}
-
-#hud-health-text {
-  position: absolute;
-  inset: 0;
-  text-align: center;
-  font-size: 12px;
-  line-height: 18px;
-  color: #fff;
-}
-
-#hud-stars {
-  font-size: 26px;
-  letter-spacing: 4px;
-  color: #ffd23f;
-  margin-top: 4px;
-}
-
-#hud-caches {
-  font-size: 13px;
-  color: #ffd23f;
-  margin-top: 2px;
-}
-
-#hud-top-right {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  text-align: right;
-}
-
-#minimap {
-  border: 2px solid rgba(255, 255, 255, 0.5);
-  border-radius: 6px;
-  background: #123a5c;
-}
-
-#hud-radio {
-  margin-top: 6px;
-  font-size: 16px;
-  color: #00e5ff;
-}
-
-#hud-ticker {
-  font-size: 12px;
-  color: #d8d8d8;
-  font-weight: 400;
-}
-
-#hud-mission {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: 620px;
-  text-align: center;
-  font-size: 16px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 210, 63, 0.6);
-  border-radius: 6px;
-  padding: 8px 14px;
-  color: #ffe9a0;
-}
-
-#hud-timer {
-  position: absolute;
-  top: 66px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 20px;
-  color: #ff6a5c;
-}
-
-#hud-bottom-left {
-  position: absolute;
-  left: 14px;
-  bottom: 14px;
-}
-
-#hud-weapon {
-  font-size: 18px;
-}
-
-#hud-ammo {
-  font-size: 14px;
-  color: #ffd23f;
-}
-
-#hud-nos-label {
-  font-size: 12px;
-  margin-top: 6px;
-  color: #00e5ff;
-}
-
-#hud-nos {
-  width: 170px;
-  height: 10px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(0, 229, 255, 0.5);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-#hud-nos-fill {
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, #00a5ff, #00e5ff);
-}
-
-#hud-speed {
-  font-size: 22px;
-  margin-top: 4px;
-}
-
-#hud-bottom-right {
-  position: absolute;
-  right: 14px;
-  bottom: 14px;
-  text-align: right;
-}
-
-#hud-respect-text {
-  font-size: 14px;
-  color: #ffb3d9;
-}
-
-#hud-respect {
-  width: 190px;
-  height: 10px;
-  margin-top: 4px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 179, 217, 0.5);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-#hud-respect-fill {
-  height: 100%;
-  width: 0;
-  background: linear-gradient(90deg, #ff2e88, #ffb3d9);
-}
-
-#hud-crew {
-  display: none;
-  margin-top: 6px;
-  font-size: 14px;
-  color: #7cff4f;
-}
-
-#hud-toast {
-  position: absolute;
-  left: 50%;
-  bottom: 120px;
-  transform: translateX(-50%);
-  font-size: 17px;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.6);
-  border-radius: 6px;
-  padding: 8px 16px;
-  transition: opacity 0.3s;
-  max-width: 640px;
-  text-align: center;
-}
-
-#hud-prompt {
-  position: absolute;
-  left: 50%;
-  bottom: 62px;
-  transform: translateX(-50%);
-  font-size: 13px;
-  color: #d8d8d8;
-  font-weight: 400;
-}
-
-/* ---------- Weapon wheel ---------- */
-
-#weapon-wheel {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  gap: 10px;
-  z-index: 20;
-}
-
-.wheel-item {
-  background: rgba(0, 0, 0, 0.75);
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-radius: 8px;
-  padding: 14px 18px;
-  font-size: 15px;
-  font-weight: 700;
-  color: #fff;
-}
-
-.wheel-item.selected {
-  border-color: #ffd23f;
-  color: #ffd23f;
-}
-
-/* ---------- Overlays ---------- */
-
-.overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(5, 15, 25, 0.72);
-  overflow-y: auto;
-}
-
-.panel {
-  background: rgba(10, 25, 40, 0.94);
-  border: 1px solid rgba(255, 210, 63, 0.55);
-  border-radius: 12px;
-  padding: 28px 34px;
-  max-width: 640px;
-  width: 92%;
-  margin: 20px auto;
-  text-align: center;
-}
-
-.panel h1 {
-  margin: 0 0 8px;
-  font-size: 42px;
-  letter-spacing: 3px;
-  color: #ffd23f;
-}
-
-.panel h2 {
-  margin: 18px 0 6px;
-  font-size: 15px;
-  letter-spacing: 2px;
-  color: #00e5ff;
-}
-
-.panel p {
-  font-size: 14px;
-  line-height: 1.5;
-  color: #e8e8e8;
-}
-
-.features {
-  text-align: left;
-  font-size: 14px;
-  line-height: 1.7;
-  margin: 12px auto;
-  max-width: 520px;
-}
-
-.controls {
-  font-size: 13px;
-  color: #c8d8e8;
-}
-
-.buttons {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-top: 16px;
-}
-
-button {
-  background: #ffd23f;
-  color: #14202c;
-  border: none;
-  border-radius: 6px;
-  padding: 12px 22px;
-  font-size: 15px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-button:hover:not(:disabled) { background: #ffe27a; }
-button:disabled { opacity: 0.45; cursor: not-allowed; }
-
-#mission-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.mission-item {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  font-weight: 600;
-  padding: 8px 12px;
-  text-align: left;
-}
-
-.mission-item.locked { opacity: 0.45; }
-
-.shop-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  background: rgba(255, 255, 255, 0.07);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-  text-align: left;
-  font-size: 14px;
-}
-
-.shop-row small { color: #c8d8e8; }
-.shop-row button { padding: 8px 16px; }
+/* Solara Bay — HUD and overlay styling. Plain CSS, no external fonts. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1420;
+  font-family: 'Segoe UI', Arial, sans-serif; color: #fff; }
+canvas#game { display: block; width: 100vw; height: 100vh; }
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+.hud-box { position: absolute; background: rgba(8, 18, 28, 0.72); border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 8px; padding: 8px 12px; font-size: 15px; line-height: 1.5; }
+#hud-topleft { top: 12px; left: 12px; min-width: 210px; }
+#hud-cash { font-size: 22px; font-weight: 800; color: #7cff00; }
+#hud-health { font-weight: 700; }
+#hud-stars { font-size: 22px; color: #ffd700; letter-spacing: 3px; }
+#hud-respect { color: #7cc4ff; font-weight: 700; }
+#hud-topright { top: 12px; right: 12px; text-align: right; min-width: 220px; }
+#hud-radio { font-weight: 800; color: #ff6ad5; }
+#hud-song { color: #ddd; font-size: 13px; }
+#hud-crew { font-weight: 800; }
+#hud-banner { position: absolute; top: 14%; left: 50%; transform: translateX(-50%);
+  font-size: 26px; font-weight: 900; color: #ffd700; text-align: center;
+  text-shadow: 2px 2px 0 #000, 0 0 18px rgba(255, 215, 0, 0.5); display: none; }
+#hud-objective { top: 64px; left: 50%; transform: translateX(-50%); font-weight: 700;
+  color: #ffe9a0; white-space: nowrap; }
+#hud-timer { position: absolute; top: 120px; left: 50%; transform: translateX(-50%);
+  font-size: 30px; font-weight: 900; color: #ff5533; text-shadow: 2px 2px 0 #000; display: none; }
+#hud-message { position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%);
+  background: rgba(8,18,28,0.8); padding: 8px 16px; border-radius: 8px; font-weight: 700; display: none; }
+#hud-bottomleft { bottom: 12px; left: 12px; min-width: 260px; }
+#hud-weapon { font-weight: 800; color: #ffb347; }
+#hud-speed { font-weight: 700; }
+#hud-nos { color: #00e5ff; font-weight: 700; }
+#hud-prompt { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%);
+  background: rgba(255, 215, 0, 0.9); color: #111; font-weight: 800; padding: 6px 14px;
+  border-radius: 6px; display: none; }
+#minimap { position: absolute; right: 12px; bottom: 12px; width: 190px; height: 190px;
+  border: 2px solid rgba(255,255,255,0.5); border-radius: 8px; background: #0d2b3d; }
+.overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+  background: rgba(4, 10, 18, 0.78); z-index: 10; pointer-events: auto; }
+.panel { background: linear-gradient(160deg, #12283d, #0a1420); border: 2px solid #ff9a3d;
+  border-radius: 14px; padding: 28px 34px; max-width: 640px; max-height: 88vh; overflow-y: auto;
+  text-align: center; box-shadow: 0 0 40px rgba(255, 154, 61, 0.35); }
+.panel h1 { font-size: 52px; letter-spacing: 4px; color: #ffd700; text-shadow: 3px 3px 0 #b35400; }
+.panel h2 { font-size: 34px; letter-spacing: 2px; color: #ffd700; margin-bottom: 10px; }
+.tagline { font-size: 15px; color: #cfe8ff; margin: 8px 0 14px; line-height: 1.5; }
+.rank-line { color: #7cff00; font-weight: 700; margin-bottom: 14px; }
+.buttons { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 14px 0; }
+.buttons button { background: #ff9a3d; color: #111; border: none; border-radius: 8px;
+  padding: 12px 22px; font-size: 16px; font-weight: 800; cursor: pointer; }
+.buttons button:hover { background: #ffd700; }
+.mission-list { text-align: left; margin: 10px auto; max-width: 520px; font-size: 14px; }
+.mission-row { padding: 4px 8px; border-radius: 5px; cursor: pointer; }
+.mission-row:hover { background: rgba(255,255,255,0.12); }
+.mission-row.done { color: #7cff00; }
+.mission-row.locked { color: #888; cursor: default; }
+.controls { font-size: 13px; color: #9fb8cc; line-height: 1.6; margin-top: 12px; }
+.hero { color: #ffb347; font-style: italic; margin-top: 10px; }
+.shop-line { text-align: left; padding: 3px 0; font-size: 14px; }
+.wheel { display: flex; gap: 12px; justify-content: center; margin: 16px 0; }
+.wheel-item { background: rgba(255,255,255,0.08); border: 2px solid #555; border-radius: 10px;
+  padding: 14px; min-width: 120px; font-size: 14px; }
+.wheel-item.selected { border-color: #ffd700; background: rgba(255, 215, 0, 0.18); }
+#hud-busted { color: #ff3333; }

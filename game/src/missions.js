@@ -1,300 +1,328 @@
-// Missions and story: 12 sequential missions for Mara Vale, with on-screen
-// story text, a waypoint marker + distance readout, and cash rewards.
-// Types: steal, drop, crate, timed, crew, escape, race, escort, gigs, final.
+// Solara Bay — 12 sequential story missions for Mara Vale.
+// Each mission sets up its stage, checks progress every frame, and pays out.
 
-import { MISSIONS, PLACES } from './config.js';
-import { makeCrate, makePerson } from './models.js';
+import * as THREE from 'three';
+import { MISSIONS, GARAGE, LIGHTHOUSE } from './config.js';
+import { makeCrateMesh } from './models.js';
 import { addRespect } from './respect.js';
-import { spawnDante, despawnDante } from './crew.js';
-import { spawnTaxi, spawnBounty, spawnPickup, checkPickup } from './activities.js';
-import { clearPolice } from './police.js';
+import { addWanted } from './police.js';
+import { spawnEnemy, clearEnemies } from './combat.js';
+import { setCrewActive } from './crew.js';
+import { spawnTaxi, spawnVigilante } from './activities.js';
 
-export function currentMission(G) {
-  return MISSIONS[G.missionIndex] || null;
+const DOCKS = [[152, 100], [154, 112], [152, 124]];
+const RING = [[0, -120], [120, -120], [140, 0], [120, 120], [0, 140], [-120, 120], [-140, 0], [-120, -120]];
+const NEON_LOOP = [[30, 50], [60, 60], [85, 45], [85, 65], [40, 70], [25, 55]];
+
+export function createMissions(scene) {
+  const markerGroup = new THREE.Group();
+  scene.add(markerGroup);
+  return {
+    scene,
+    markerGroup,
+    crateMeshes: [],
+    checkpointMeshes: [],
+    beacon: null,
+    packagePos: null,
+    dropPos: null,
+    escortTarget: null,
+    stage: 0,
+  };
 }
 
-export function missionName(G) {
-  const m = currentMission(G);
-  return m ? `${m.id}. ${m.name}` : 'STORY COMPLETE';
+function clearMarkers(m) {
+  for (const c of m.crateMeshes) m.markerGroup.remove(c);
+  for (const c of m.checkpointMeshes) m.markerGroup.remove(c);
+  if (m.beacon) m.markerGroup.remove(m.beacon);
+  m.crateMeshes = [];
+  m.checkpointMeshes = [];
+  m.beacon = null;
 }
 
-export function startMission(G, index) {
-  const m = MISSIONS[index];
-  if (!m) return false;
-  G.missionIndex = index;
-  G.missionActive = true;
-  G.missionStep = 0;
-  G.missionCrates = 0;
-  G.missionGuardsDown = 0;
-  G.missionGigs = { taxi: false, vigilante: false, pickup: false };
-  G.missionCheckpoint = 0;
-  G.missionTimer = m.time || 0;
-  G._pickup = null;
-  // Clean the board from the last mission.
-  for (const crate of G.crates) G.scene.remove(crate.mesh);
-  G.crates = [];
-  for (const guard of G.guards) G.scene.remove(guard.mesh);
-  G.guards = [];
-  G.missionCheckpoints = [];
-  // Dusk lighting for the night missions.
-  G.dusk = index === 3 || index === 8 || index === 10;
-  applyLighting(G);
+function makeBeacon(m, x, z, color) {
+  const beacon = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 26, 8),
+    new THREE.MeshBasicMaterial({ color: color || 0xffd700, transparent: true, opacity: 0.55 }));
+  pole.position.y = 13;
+  beacon.add(pole);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(3, 0.35, 8, 24),
+    new THREE.MeshBasicMaterial({ color: color || 0xffd700 }));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.3;
+  beacon.add(ring);
+  beacon.position.set(x, 0, z);
+  m.markerGroup.add(beacon);
+  m.beacon = beacon;
+  return beacon;
+}
 
-  if (m.type === 'crate') {
-    for (let i = 0; i < m.count; i++) {
-      const mesh = makeCrate(G.THREE);
-      const x = PLACES.docks.x - 20 + i * 12;
-      const z = PLACES.docks.z - 6 + (i % 2) * 12;
-      mesh.position.set(x, 0, z);
-      G.scene.add(mesh);
-      G.crates.push({ mesh, x, z, taken: false });
+function makeCheckpoints(m, points) {
+  clearMarkers(m);
+  m.checkpointMeshes = points.map(([x, z], i) => {
+    const mesh = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.4, 8, 24),
+      new THREE.MeshBasicMaterial({ color: i === 0 ? 0x00ff66 : 0xffaa00 }));
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.set(x, 1.2, z);
+    m.markerGroup.add(mesh);
+    return mesh;
+  });
+}
+
+export function currentMission(state) {
+  return MISSIONS[state.missionIndex] || null;
+}
+
+export function missionWaypoint(state, m) {
+  const id = (currentMission(state) || {}).id;
+  const p = state.playerPos;
+  switch (id) {
+    case 1: return { x: GARAGE.x, z: GARAGE.z, label: 'OLD GARAGE' };
+    case 2: return { x: 120, z: 120, label: 'DROP POINT' };
+    case 3: {
+      const left = m.crateMeshes.filter((c) => c.visible);
+      if (left.length) return { x: left[0].position.x, z: left[0].position.z, label: `CRATES ${3 - left.length}/3` };
+      return { x: GARAGE.x, z: GARAGE.z, label: 'RETURN TO GARAGE' };
     }
-    spawnGuards(G, 2, PLACES.docks.x - 10, PLACES.docks.z);
-  }
-  if (m.type === 'crew') {
-    spawnGuards(G, 4, PLACES.docks.x - 10, PLACES.docks.z);
-  }
-  if (m.type === 'escape') {
-    G.wanted = 3;
-  }
-  if (m.type === 'race') {
-    G.missionCheckpoints = raceCheckpoints(m.id);
-    G.waypoint = { ...G.missionCheckpoints[0], label: 'CHECKPOINT 1' };
-  }
-  if (m.type === 'escort') {
-    spawnDante(G.THREE, G, G.player.x + 6, G.player.z + 4);
-    G.wanted = Math.max(G.wanted, 2);
-    G.dusk = true;
-    applyLighting(G);
-  }
-  if (m.type === 'gigs') {
-    spawnTaxi(G.THREE, G);
-    spawnBounty(G.THREE, G);
-    G._pickup = spawnPickup(G.THREE, G);
-  }
-  if (m.type === 'final') {
-    G.wanted = m.id === 12 ? 5 : 4;
-    if (m.id === 12) spawnDante(G.THREE, G, G.player.x + 6, G.player.z + 4);
-  }
-  if (m.type === 'drop' || m.type === 'timed') {
-    G.wanted = Math.max(G.wanted, m.id === 4 ? 2 : 1);
-  }
-  if (m.type !== 'race') {
-    G.waypoint = {
-      x: m.target.x, z: m.target.z,
-      label: m.type === 'final' ? 'REACH THE LIGHTHOUSE' : m.name,
-    };
-  }
-  G.toast = `MISSION ${m.id}: ${m.name} — ${m.brief}`;
-  G.toastUntil = G.time + 5;
-  return true;
-}
-
-function raceCheckpoints(missionId) {
-  if (missionId === 7) {
-    return [
-      { x: 160, z: 0 }, { x: 160, z: 160 }, { x: 0, z: 160 },
-      { x: -160, z: 160 }, { x: -160, z: -160 }, { x: 0, z: -160 },
-    ];
-  }
-  // Neon Loop: through the strip and around the north ring.
-  return [
-    { x: 40, z: -80 }, { x: 40, z: 80 }, { x: 120, z: 80 },
-    { x: 120, z: -120 }, { x: -80, z: -120 }, { x: -80, z: 40 },
-  ];
-}
-
-function spawnGuards(G, count, cx, cz) {
-  for (let i = 0; i < count; i++) {
-    const mesh = makePerson(G.THREE, 0x8b0000);
-    const x = cx + (Math.random() - 0.5) * 24;
-    const z = cz + (Math.random() - 0.5) * 24;
-    mesh.position.set(x, 0, z);
-    G.scene.add(mesh);
-    G.guards.push({ mesh, x, z, health: 100, shootCooldown: 1 + Math.random() });
+    case 4: return { x: -120, z: 120, label: 'NIGHT DROP' };
+    case 5: {
+      const alive = state.guardsLeft;
+      if (alive > 0) return { x: 153, z: 112, label: `GUARDS LEFT: ${alive}` };
+      return { x: 153, z: 112, label: 'GRAB THE LEDGER' };
+    }
+    case 6:
+      if (state.missionStage === 0) return { x: p.x, z: p.z, label: 'LOSE THE HEAT' };
+      return { x: GARAGE.x, z: GARAGE.z, label: 'RETURN TO SAFEHOUSE' };
+    case 7:
+    case 11: {
+      const pts = id === 7 ? RING : NEON_LOOP;
+      const cp = pts[state.checkpointIndex] || pts[pts.length - 1];
+      return { x: cp[0], z: cp[1], label: `CHECKPOINT ${state.checkpointIndex + 1}/${pts.length}` };
+    }
+    case 8:
+    case 12: return { x: LIGHTHOUSE.x, z: LIGHTHOUSE.z, label: 'LIGHTHOUSE' };
+    case 9: return { x: 120, z: -100, label: 'ESCORT DANTE' };
+    case 10: {
+      if (!state.gigs.taxi) return state.taxi
+        ? { x: state.taxi.passenger ? state.taxi.drop.x : state.taxi.pickup.x, z: state.taxi.passenger ? state.taxi.drop.z : state.taxi.pickup.z, label: 'TAXI FARE' }
+        : { x: p.x, z: p.z, label: 'FIND A TAXI FARE' };
+      if (!state.gigs.vigilante) return state.vigilante
+        ? { x: state.vigilante.x, z: state.vigilante.z, label: 'VIGILANTE TARGET' }
+        : { x: p.x, z: p.z, label: 'FIND A BOUNTY' };
+      if (!state.gigs.package) return { x: 60, z: 60, label: 'PACKAGE PICKUP' };
+      return { x: GARAGE.x, z: GARAGE.z, label: 'RETURN TO GARAGE' };
+    }
+    default: return { x: GARAGE.x, z: GARAGE.z, label: 'SOLARA BAY' };
   }
 }
 
-export function applyLighting(G) {
-  if (!G.sun || !G.hemi) return;
-  if (G.dusk) {
-    G.sun.intensity = 0.7;
-    G.sun.color.setHex(0xff9a5c);
-    G.hemi.intensity = 0.5;
-    G.scene.background.setHex(0x2c1e3f);
-    G.scene.fog.color.setHex(0x2c1e3f);
-  } else {
-    G.sun.intensity = 1.35;
-    G.sun.color.setHex(0xfff2d9);
-    G.hemi.intensity = 0.85;
-    G.scene.background.setHex(0x87b5d6);
-    G.scene.fog.color.setHex(0xbfd9ea);
+export function startMission(state, ctx) {
+  const m = ctx.missions;
+  const mission = currentMission(state);
+  if (!mission) return;
+  state.missionActive = true;
+  state.missionStage = 0;
+  state.missionTimer = 0;
+  state.checkpointIndex = 0;
+  clearMarkers(m);
+  clearEnemies(ctx.combat);
+  state.banner = `MISSION ${mission.id}/12 — ${mission.name}`;
+  state.bannerTimer = 5;
+  state.message = mission.text;
+  state.messageTimer = 6;
+  const id = mission.id;
+  if (id === 2) addWanted(state, 1);
+  if (id === 3) {
+    state.cratesLeft = 3;
+    m.crateMeshes = DOCKS.map(([x, z]) => {
+      const c = makeCrateMesh();
+      c.position.set(x, 0, z);
+      m.markerGroup.add(c);
+      return c;
+    });
+    spawnEnemy(ctx.combat, 150, 106, 60);
+    spawnEnemy(ctx.combat, 154, 118, 60);
+    makeBeacon(m, 153, 112, 0xffaa00);
+  }
+  if (id === 4) {
+    state.missionTimer = 90;
+    state.night = true;
+    addWanted(state, 2);
+    makeBeacon(m, -120, 120, 0x00e5ff);
+  }
+  if (id === 5) {
+    state.guardsLeft = 4;
+    [[150, 106], [154, 118], [150, 100], [154, 124]].forEach(([x, z]) => spawnEnemy(ctx.combat, x, z, 80));
+    makeBeacon(m, 153, 112, 0xff3333);
+  }
+  if (id === 6) {
+    addWanted(state, 3);
+    state.missionStage = 0;
+  }
+  if (id === 7) {
+    state.missionTimer = 120;
+    makeCheckpoints(m, RING);
+  }
+  if (id === 8) {
+    addWanted(state, 4);
+    makeBeacon(m, LIGHTHOUSE.x, LIGHTHOUSE.z, 0xffd700);
+  }
+  if (id === 9) {
+    state.night = true;
+    addWanted(state, 2);
+    setCrewActive(ctx.crew, state, true, state.playerPos);
+    makeBeacon(m, 120, -100, 0xffd700);
+  }
+  if (id === 10) {
+    state.gigs = { taxi: false, vigilante: false, package: false };
+    spawnTaxi(ctx.activities, state.playerPos);
+    spawnVigilante(ctx.activities, state.playerPos);
+    makeBeacon(m, 60, 60, 0xffd700);
+  }
+  if (id === 11) {
+    state.missionTimer = 100;
+    state.night = true;
+    addWanted(state, 3);
+    makeCheckpoints(m, NEON_LOOP);
+  }
+  if (id === 12) {
+    addWanted(state, 5);
+    setCrewActive(ctx.crew, state, true, state.playerPos);
+    makeBeacon(m, LIGHTHOUSE.x, LIGHTHOUSE.z, 0xffd700);
   }
 }
 
-export function completeMission(G) {
-  const m = currentMission(G);
-  if (!m) return;
-  G.cash += m.reward;
-  addRespect(G, 40 + m.id * 5, `mission ${m.id} complete`);
-  if (G.audio) G.audio.chime();
-  G.toast = `MISSION COMPLETE: ${m.name} — +$${m.reward}!`;
-  G.toastUntil = G.time + 4;
-  G.missionActive = false;
-  G.missionDone = true;
-  G.waypoint = null;
-  if (m.id === 12) {
-    G.mode = 'ended';
-    showEnding(G);
-  } else {
-    G.missionIndex = m.id; // next mission (0-based index of the next id)
-    saveProgress(G);
-    setTimeout(() => {
-      if (G.mode === 'playing') startMission(G, G.missionIndex);
-    }, 2500);
+function completeMission(state, ctx) {
+  const mission = currentMission(state);
+  if (!mission) return;
+  state.cash += mission.reward;
+  addRespect(state, 60 + mission.id * 10, 'mission');
+  state.missionDone.push(mission.id);
+  state.missionActive = false;
+  state.banner = `MISSION COMPLETE — ${mission.name}  +$${mission.reward}`;
+  state.bannerTimer = 5;
+  state.message = `Cash $${state.cash}. Respect ${state.respect} (${state.missionIndex + 1}/12 done).`;
+  state.messageTimer = 5;
+  clearMarkers(ctx.missions);
+  clearEnemies(ctx.combat);
+  if (mission.id === 8 || mission.id === 12) {
+    state.screen = 'ended';
+    state.endingText = mission.id === 12
+      ? 'QUEEN OF SOLARA — Mara Vale owns the island. The harbor debt is paid, the crew is hers, and the lighthouse beam is hers too.'
+      : 'KING OF SOLARA — Mara made it to the lighthouse. The week is won, but the island still has stories left.';
   }
-  saveProgress(G);
+  if (mission.id === 9) setCrewActive(ctx.crew, state, false);
+  if (mission.id === 12) setCrewActive(ctx.crew, state, false);
+  state.night = false;
+  state.missionIndex += 1;
+  ctx.saveGame();
 }
 
-export function updateMissions(G, dt) {
-  if (!G.missionActive) return;
-  const m = currentMission(G);
-  if (!m) return;
-  if (m.time) {
-    G.missionTimer -= dt;
-    if (G.missionTimer <= 0) {
-      G.missionTimer = 0;
-      failMission(G, 'Out of time!');
+export function updateMission(state, ctx, dt) {
+  if (!state.missionActive) return;
+  const mission = currentMission(state);
+  if (!mission) return;
+  const p = state.playerPos;
+  const dist = (x, z) => Math.hypot(p.x - x, p.z - z);
+  const id = mission.id;
+
+  if ((id === 4 || id === 7 || id === 11) && state.missionTimer > 0) {
+    state.missionTimer -= dt;
+    if (state.missionTimer <= 0) {
+      state.missionActive = false;
+      state.banner = 'MISSION FAILED — out of time';
+      state.bannerTimer = 4;
+      clearMarkers(ctx.missions);
+      state.night = false;
       return;
     }
   }
-  const px = G.player.x;
-  const pz = G.player.z;
-  const distTo = (x, z) => Math.hypot(x - px, z - pz);
 
-  if (m.type === 'steal') {
-    if (G.car) completeMission(G);
-  } else if (m.type === 'drop' || m.type === 'timed') {
-    if (distTo(m.target.x, m.target.z) < 8) completeMission(G);
-  } else if (m.type === 'crate') {
-    for (const crate of G.crates) {
-      if (!crate.taken && distTo(crate.x, crate.z) < 3) {
-        crate.taken = true;
-        G.scene.remove(crate.mesh);
-        G.missionCrates += 1;
-        if (G.audio) G.audio.chime();
-        G.toast = `Crate ${G.missionCrates}/${m.count} collected`;
-        G.toastUntil = G.time + 2;
+  switch (id) {
+    case 1:
+      if (!state.onFoot && dist(GARAGE.x, GARAGE.z) < 15) completeMission(state, ctx);
+      break;
+    case 2:
+      if (dist(120, 120) < 6) completeMission(state, ctx);
+      break;
+    case 3: {
+      let took = false;
+      ctx.missions.crateMeshes.forEach((c) => {
+        if (c.visible && dist(c.position.x, c.position.z) < 3) {
+          c.visible = false;
+          state.cratesLeft -= 1;
+          took = true;
+        }
+      });
+      if (took) {
+        state.message = `CRATE ${3 - state.cratesLeft}/3 collected`;
+        state.messageTimer = 2;
       }
+      if (state.cratesLeft <= 0) completeMission(state, ctx);
+      break;
     }
-    if (G.missionCrates >= m.count) completeMission(G);
-  } else if (m.type === 'crew') {
-    if (G.missionGuardsDown >= m.count && distTo(PLACES.docks.x, PLACES.docks.z) < 8) {
-      completeMission(G);
-    } else if (G.missionGuardsDown >= m.count) {
-      G.waypoint = { x: PLACES.docks.x, z: PLACES.docks.z, label: 'GRAB THE LEDGER' };
+    case 4:
+      if (dist(-120, 120) < 6) completeMission(state, ctx);
+      break;
+    case 5: {
+      const alive = ctx.combat.enemies.filter((e) => !e.dead).length;
+      state.guardsLeft = alive;
+      if (alive === 0 && dist(153, 112) < 4) completeMission(state, ctx);
+      break;
     }
-  } else if (m.type === 'escape') {
-    if (G.wanted <= 0 && distTo(PLACES.garage.x, PLACES.garage.z) < 10) {
-      completeMission(G);
-    } else if (G.wanted <= 0) {
-      G.waypoint = { x: PLACES.garage.x, z: PLACES.garage.z, label: 'GET TO THE GARAGE' };
-    }
-  } else if (m.type === 'race') {
-    const cp = G.missionCheckpoints[G.missionCheckpoint];
-    if (cp && distTo(cp.x, cp.z) < 9) {
-      G.missionCheckpoint += 1;
-      if (G.audio) G.audio.chime();
-      if (G.missionCheckpoint >= G.missionCheckpoints.length) {
-        completeMission(G);
-      } else {
-        const next = G.missionCheckpoints[G.missionCheckpoint];
-        G.waypoint = { ...next, label: `CHECKPOINT ${G.missionCheckpoint + 1}` };
-        G.toast = `Checkpoint ${G.missionCheckpoint}/${G.missionCheckpoints.length}!`;
-        G.toastUntil = G.time + 2;
+    case 6:
+      if (state.missionStage === 0 && state.wantedFloat < 0.5) {
+        state.missionStage = 1;
+        state.message = 'Heat lost — now get back to the safehouse';
+        state.messageTimer = 4;
+      } else if (state.missionStage === 1 && dist(GARAGE.x, GARAGE.z) < 15) {
+        completeMission(state, ctx);
       }
-    }
-  } else if (m.type === 'escort') {
-    if (G.dante) {
-      const dd = Math.hypot(G.dante.x - px, G.dante.z - pz);
-      if (dd > 60) {
-        failMission(G, 'You lost Dante! Stay close to his car.');
-        return;
+      break;
+    case 7:
+    case 11: {
+      const pts = id === 7 ? RING : NEON_LOOP;
+      const cp = pts[state.checkpointIndex];
+      if (cp && dist(cp[0], cp[1]) < 7) {
+        const mesh = ctx.missions.checkpointMeshes[state.checkpointIndex];
+        if (mesh) mesh.material.color.set(0x00ff66);
+        state.checkpointIndex += 1;
+        if (state.checkpointIndex >= pts.length) completeMission(state, ctx);
+        else {
+          const next = ctx.missions.checkpointMeshes[state.checkpointIndex];
+          if (next) next.material.color.set(0x00ff66);
+          state.message = `CHECKPOINT ${state.checkpointIndex}/${pts.length}`;
+          state.messageTimer = 2;
+        }
       }
+      break;
     }
-    if (distTo(m.target.x, m.target.z) < 9) {
-      despawnDante(G);
-      completeMission(G);
+    case 8:
+      if (dist(LIGHTHOUSE.x, LIGHTHOUSE.z) < 10) completeMission(state, ctx);
+      break;
+    case 9: {
+      const d = state.dantePos;
+      if (dist(120, -100) < 10 && Math.hypot(d.x - 120, d.z + 100) < 18) {
+        completeMission(state, ctx);
+      }
+      break;
     }
-  } else if (m.type === 'gigs') {
-    if (G._pickup) {
-      if (checkPickup(G, G._pickup)) G._pickup = null;
+    case 10: {
+      if (!state.gigs.package && state.gigs.taxi && state.gigs.vigilante && dist(60, 60) < 4) {
+        state.gigs.package = true;
+        state.cash += 400;
+        addRespect(state, 30, 'package');
+        state.message = 'PACKAGE PICKED UP — +$400';
+        state.messageTimer = 3;
+      }
+      if (state.gigs.taxi && state.gigs.vigilante && state.gigs.package) {
+        completeMission(state, ctx);
+      }
+      break;
     }
-    const done = G.missionGigs.taxi && G.missionGigs.vigilante && G.missionGigs.pickup;
-    if (done && distTo(m.target.x, m.target.z) < 9) {
-      completeMission(G);
-    } else if (done) {
-      G.waypoint = { x: m.target.x, z: m.target.z, label: 'REPORT TO THE NEON STRIP' };
-    }
-  } else if (m.type === 'final') {
-    if (distTo(m.target.x, m.target.z) < 9) {
-      if (m.id === 12) despawnDante(G);
-      completeMission(G);
-    }
-  }
-}
-
-export function failMission(G, reason) {
-  G.missionActive = false;
-  G.toast = `MISSION FAILED: ${reason} — retrying ${currentMission(G).name}.`;
-  G.toastUntil = G.time + 4;
-  clearPolice(G);
-  G.wanted = 0;
-  setTimeout(() => {
-    if (G.mode === 'playing') startMission(G, G.missionIndex);
-  }, 2000);
-}
-
-export function objectiveText(G) {
-  const m = currentMission(G);
-  if (!m) return 'Story complete — free roam Solara Bay!';
-  if (!G.missionActive) return `${m.name} — starting…`;
-  const d = G.waypoint ? Math.round(Math.hypot(G.waypoint.x - G.player.x, G.waypoint.z - G.player.z)) : 0;
-  const label = G.waypoint ? G.waypoint.label : m.name;
-  let extra = '';
-  if (m.type === 'crate') extra = ` — crates ${G.missionCrates}/${m.count}`;
-  if (m.type === 'crew') extra = ` — guards down ${G.missionGuardsDown}/${m.count}`;
-  if (m.type === 'race') extra = ` — checkpoint ${G.missionCheckpoint + 1}/${G.missionCheckpoints.length}`;
-  if (m.type === 'gigs') {
-    const g = G.missionGigs;
-    extra = ` — taxi ${g.taxi ? '✓' : '✗'} · vigilante ${g.vigilante ? '✓' : '✗'} · pickup ${g.pickup ? '✓' : '✗'}`;
-  }
-  if (m.time) extra += ` — ${Math.ceil(G.missionTimer)}s left`;
-  return `${m.name}: ${label} — ${d}m${extra}`;
-}
-
-function showEnding(G) {
-  const el = document.getElementById('ending-screen');
-  if (!el) return;
-  el.querySelector('.ending-title').textContent = 'QUEEN OF SOLARA';
-  el.querySelector('.ending-body').textContent =
-    `Mara Vale paid the harbor debt, kept her crew and took the crown. Final cash: $${G.cash}. ` +
-    `Respect: ${G.respect}. Caches: ${G.cachesFound}/10. Free roam continues — Solara Bay is yours.`;
-  el.classList.remove('hidden');
-}
-
-export function saveProgress(G) {
-  try {
-    const save = {
-      cash: G.cash,
-      respect: G.respect,
-      cachesFound: G.cachesFound,
-      upgrades: G.upgrades,
-      missionIndex: G.missionIndex,
-      weapons: G.weapons,
-    };
-    localStorage.setItem('solara-bay-v3-save', JSON.stringify(save));
-  } catch (err) {
-    // Storage may be unavailable; the game still plays.
+    case 12:
+      if (dist(LIGHTHOUSE.x, LIGHTHOUSE.z) < 10) completeMission(state, ctx);
+      break;
+    default:
+      break;
   }
 }

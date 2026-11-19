@@ -1,71 +1,80 @@
-// Pedestrians walking the sidewalks. They flee when a shot is fired or a
-// car comes at them, and a hit pedestrian raises the wanted level.
+// Solara Bay — pedestrians walking the sidewalks, fleeing from danger.
 
-import { WORLD } from './config.js';
+import * as THREE from 'three';
 import { mulberry32, pick, range } from './random.js';
-import { makePerson } from './models.js';
+import { makePersonMesh } from './models.js';
 
-const SHIRT_COLORS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf1c40f, 0x9b59b6, 0x1abc9c, 0xecf0f1];
+const SHIRTS = [0xe74c3c, 0x3498db, 0x2ecc71, 0xf39c12, 0x9b59b6, 0x1abc9c, 0xecf0f1, 0x34495e];
+const SKINS = [0xd9a066, 0xb57a4a, 0x8a5a30, 0xe8b88a, 0x6b4226];
 
-export function spawnPedestrians(THREE, G, count) {
-  const rand = mulberry32(G.seed + 31);
+export function createPedestrians(scene, count) {
+  const rand = mulberry32(4242);
+  const people = [];
   for (let i = 0; i < count; i++) {
-    const mesh = makePerson(THREE, pick(rand, SHIRT_COLORS));
-    const street = pick(rand, WORLD.streets);
-    const along = range(rand, -180, 180);
-    const side = rand() > 0.5;
-    const ped = {
+    const mesh = makePersonMesh(pick(rand, SHIRTS), pick(rand, SKINS));
+    const horizontal = rand() < 0.5;
+    const road = Math.floor(range(rand, -5, 5)) * 30;
+    const along = range(rand, -145, 145);
+    const side = rand() < 0.5 ? 6.2 : -6.2;
+    const p = {
       mesh,
-      street,
+      horizontal,
+      road,
       along,
       side,
-      dir: rand() > 0.5 ? 1 : -1,
+      dir: rand() < 0.5 ? 1 : -1,
       speed: range(rand, 1.2, 2.4),
-      flee: 0,
-      walkPhase: rand() * Math.PI * 2,
+      fleeing: false,
+      fleeTimer: 0,
     };
-    mesh.position.set(side ? street + 7.5 : along, 0, side ? along : street + 7.5);
-    G.scene.add(mesh);
-    G.peds.push(ped);
+    mesh.position.set(horizontal ? along : road + side, 0, horizontal ? road + side : along);
+    scene.add(mesh);
+    people.push(p);
+  }
+  return { people };
+}
+
+export function updatePedestrians(peds, dt, dangerPos, dangerRadius) {
+  for (const p of peds.people) {
+    const dx = p.mesh.position.x - dangerPos.x;
+    const dz = p.mesh.position.z - dangerPos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < dangerRadius) {
+      p.fleeing = true;
+      p.fleeTimer = 2.5;
+    }
+    if (p.fleeTimer > 0) p.fleeTimer -= dt;
+    else p.fleeing = false;
+    const speed = p.fleeing ? p.speed * 3.2 : p.speed;
+    p.along += p.dir * speed * dt;
+    if (p.along > 152) { p.along = 152; p.dir = -1; }
+    if (p.along < -152) { p.along = -152; p.dir = 1; }
+    if (p.horizontal) {
+      p.mesh.position.x = p.along;
+      p.mesh.position.z = p.road + p.side;
+      p.mesh.rotation.y = p.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+    } else {
+      p.mesh.position.z = p.along;
+      p.mesh.position.x = p.road + p.side;
+      p.mesh.rotation.y = p.dir > 0 ? 0 : Math.PI;
+    }
+    // walk bob
+    const t = performance.now() / 120;
+    const legL = p.mesh.getObjectByName('legL');
+    const legR = p.mesh.getObjectByName('legR');
+    if (legL && legR) {
+      legL.rotation.x = Math.sin(t + p.along) * 0.5;
+      legR.rotation.x = -Math.sin(t + p.along) * 0.5;
+    }
   }
 }
 
-export function updatePedestrians(G, dt, danger) {
-  for (const ped of G.peds) {
-    const dx = ped.mesh.position.x - G.player.x;
-    const dz = ped.mesh.position.z - G.player.z;
-    const distPlayer = Math.hypot(dx, dz);
-    if (danger || distPlayer < 6) ped.flee = 1.2;
-    if (ped.flee > 0) {
-      ped.flee -= dt;
-      const away = Math.atan2(dx, dz);
-      ped.mesh.position.x += Math.sin(away) * 5.5 * dt;
-      ped.mesh.position.z += Math.cos(away) * 5.5 * dt;
-      ped.mesh.rotation.y = away;
-    } else {
-      ped.along += ped.speed * ped.dir * dt;
-      if (ped.along > 195) { ped.along = -195; ped.dir = 1; }
-      if (ped.along < -195) { ped.along = 195; ped.dir = -1; }
-      if (ped.side) {
-        ped.mesh.position.set(ped.street + 7.5, 0, ped.along);
-        ped.mesh.rotation.y = ped.dir > 0 ? 0 : Math.PI;
-      } else {
-        ped.mesh.position.set(ped.along, 0, ped.street + 7.5);
-        ped.mesh.rotation.y = ped.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
-      }
-    }
-    // Simple walk bob.
-    ped.walkPhase += dt * 6;
-    ped.mesh.position.y = Math.abs(Math.sin(ped.walkPhase)) * 0.06;
-    // A car hitting a pedestrian is a crime.
-    if (G.car && !ped.flee) {
-      const d = Math.hypot(ped.mesh.position.x - G.car.x, ped.mesh.position.z - G.car.z);
-      if (d < 2.4 && Math.abs(G.car.speed) > 4) {
-        ped.flee = 2;
-        G.wanted = Math.min(5, G.wanted + 1);
-        G.toast = 'Pedestrian hit! Wanted up.';
-        G.toastUntil = G.time + 2;
-      }
-    }
+export function nearestPedestrian(peds, x, z, radius) {
+  let best = null;
+  let bestD = radius;
+  for (const p of peds.people) {
+    const d = Math.hypot(p.mesh.position.x - x, p.mesh.position.z - z);
+    if (d < bestD) { bestD = d; best = p; }
   }
+  return best;
 }

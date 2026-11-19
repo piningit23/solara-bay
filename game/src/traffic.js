@@ -1,76 +1,69 @@
-// Traffic: cars that drive the road network, lane-following, stopping at
-// junctions and steering around the player crudely.
+// Solara Bay — traffic cars: lane-following, junction stops, crude avoidance.
 
-import { WORLD } from './config.js';
+import * as THREE from 'three';
 import { mulberry32, pick, range } from './random.js';
-import { makeCar } from './models.js';
-import { nearestStreet } from './world.js';
+import { makeCarMesh } from './models.js';
 
-const TRAFFIC_COLORS = [0xd64545, 0x3f6fb5, 0xe0e0e0, 0x3a3a3a, 0x7a9e4f, 0xd9a066, 0x8e44ad];
+const TRAFFIC_COLORS = [0xc0392b, 0x2980b9, 0xf1c40f, 0x7f8c8d, 0x27ae60, 0xe67e22, 0x8e44ad, 0xecf0f1];
 
-export function spawnTraffic(THREE, G, count) {
-  const rand = mulberry32(G.seed + 77);
+export function createTraffic(scene, count) {
+  const rand = mulberry32(777);
+  const cars = [];
   for (let i = 0; i < count; i++) {
-    const color = pick(rand, TRAFFIC_COLORS);
-    const mesh = makeCar(THREE, color);
-    const horizontal = rand() > 0.5;
-    const street = pick(rand, WORLD.streets);
-    const along = range(rand, -180, 180);
-    const lane = rand() > 0.5 ? 2.2 : -2.2;
+    const horizontal = rand() < 0.5;
+    const road = Math.floor(range(rand, -5, 5)) * 30;
+    const along = range(rand, -145, 145);
+    const lane = (rand() < 0.5 ? 2.5 : -2.5);
+    const mesh = makeCarMesh(pick(rand, TRAFFIC_COLORS), false);
     const car = {
       mesh,
       horizontal,
-      street,
+      road,
       along,
       lane,
+      dir: rand() < 0.5 ? 1 : -1,
       speed: range(rand, 7, 12),
-      dir: rand() > 0.5 ? 1 : -1,
-      stopped: 0,
+      stopped: false,
     };
-    mesh.position.set(
-      horizontal ? along : street + lane,
-      0,
-      horizontal ? street + lane : along,
-    );
+    mesh.position.set(horizontal ? along : road + lane, 0, horizontal ? road + lane : along);
     mesh.rotation.y = horizontal ? (car.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (car.dir > 0 ? 0 : Math.PI);
-    G.scene.add(mesh);
-    G.traffic.push(car);
+    scene.add(mesh);
+    cars.push(car);
+  }
+  return { cars };
+}
+
+export function updateTraffic(traffic, dt, playerPos, isPlayerCar) {
+  for (const car of traffic.cars) {
+    // crude avoidance: slow down if the player is right ahead
+    const dx = car.mesh.position.x - playerPos.x;
+    const dz = car.mesh.position.z - playerPos.z;
+    const dist = Math.hypot(dx, dz);
+    let speed = car.speed;
+    if (dist < 9) speed = car.speed * 0.25;
+    // stop at junctions: slow near a cross street
+    const nearJunction = car.horizontal
+      ? Math.abs(((car.along % 30) + 30) % 30 - 15) < 4
+      : Math.abs(((car.along % 30) + 30) % 30 - 15) < 4;
+    if (nearJunction && Math.random() < 0.3) speed *= 0.4;
+    car.along += car.dir * speed * dt;
+    if (car.along > 155) car.along = -155;
+    if (car.along < -155) car.along = 155;
+    if (car.horizontal) {
+      car.mesh.position.x = car.along;
+      car.mesh.position.z = car.road + car.lane;
+    } else {
+      car.mesh.position.z = car.along;
+      car.mesh.position.x = car.road + car.lane;
+    }
   }
 }
 
-export function updateTraffic(G, dt) {
-  const px = G.player.x;
-  const pz = G.player.z;
-  for (const car of G.traffic) {
-    // Stop at junctions when another car is close ahead, and yield to the player.
-    let blocked = false;
-    const aheadX = car.horizontal ? car.mesh.position.x + car.dir * 8 : car.mesh.position.x;
-    const aheadZ = car.horizontal ? car.mesh.position.z : car.mesh.position.z + car.dir * 8;
-    if (Math.hypot(aheadX - px, aheadZ - pz) < 7) blocked = true;
-    for (const other of G.traffic) {
-      if (other === car) continue;
-      const d = Math.hypot(other.mesh.position.x - aheadX, other.mesh.position.z - aheadZ);
-      if (d < 7) { blocked = true; break; }
-    }
-    if (blocked) {
-      car.stopped += dt;
-    } else {
-      car.stopped = 0;
-      car.along += car.speed * car.dir * dt;
-      if (car.along > 195) car.along = -195;
-      if (car.along < -195) car.along = 195;
-    }
-    // Keep the mesh on its lane.
-    if (car.horizontal) {
-      car.mesh.position.set(car.along, 0, car.street + car.lane);
-      car.mesh.rotation.y = car.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
-    } else {
-      car.mesh.position.set(car.street + car.lane, 0, car.along);
-      car.mesh.rotation.y = car.dir > 0 ? 0 : Math.PI;
-    }
-    // Junction slow-down: ease off near crossings so traffic reads as careful.
-    const nearCross = Math.abs(nearestStreet(car.horizontal ? car.mesh.position.x : car.mesh.position.z)
-      - (car.horizontal ? car.mesh.position.x : car.mesh.position.z)) < 6;
-    car.mesh.position.y = nearCross ? 0 : 0;
+export function trafficNear(traffic, x, z, radius) {
+  for (const car of traffic.cars) {
+    const dx = car.mesh.position.x - x;
+    const dz = car.mesh.position.z - z;
+    if (Math.hypot(dx, dz) < radius) return car;
   }
+  return null;
 }
