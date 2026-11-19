@@ -1,6 +1,53 @@
-export function createSave(state) {
-  function data() { return { cash: state.player.cash, health: state.player.health, armor: state.player.armor, ammo: state.player.ammo, missionIndex: state.missionIndex, wanted: state.wanted, unlockedMissions: state.unlockedMissions }; }
-  function save() { localStorage.setItem('solara-bay-v2', JSON.stringify(data())); }
-  function load() { try { const value = JSON.parse(localStorage.getItem('solara-bay-v2')); if (!value) return false; Object.assign(state.player, { cash: value.cash || 0, health: value.health || 100, armor: value.armor || 0, ammo: value.ammo || [48, 22, 160] }); state.missionIndex = value.missionIndex || 0; state.unlockedMissions = value.unlockedMissions || state.missionIndex + 1; state.wanted = value.wanted || 0; return true; } catch { return false; } }
-  return { save, load, get exists() { return !!localStorage.getItem('solara-bay-v2'); } };
+// Solara Bay — save to localStorage. Saves cash, mission progress,
+// respect, upgrades and collected caches on mission completion and on
+// the Save button. Continue resumes all of it.
+
+import { G } from './state.js';
+
+const KEY = 'solara-bay-save-v3';
+
+export function saveGame() {
+  try {
+    const data = {
+      cash: G.cash,
+      missionIndex: G.missionIndex,
+      respect: G.respect,
+      upgrades: G.upgrades,
+      cacheTaken: G.cacheTaken,
+      cachesFound: G.cachesFound,
+      station: G.station,
+    };
+    localStorage.setItem(KEY, JSON.stringify(data));
+    return true;
+  } catch (e) { return false; }
+}
+
+export function loadGame() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    G.cash = data.cash || 0;
+    G.missionIndex = data.missionIndex || 0;
+    G.respect = data.respect || 0;
+    G.upgrades = data.upgrades || {};
+    G.cacheTaken = data.cacheTaken || [];
+    G.cachesFound = data.cachesFound || G.cacheTaken.length;
+    G.station = data.station || 0;
+    // hide already-collected caches
+    if (G.cacheMeshes) {
+      for (const i of G.cacheTaken) {
+        if (G.cacheMeshes[i]) G.cacheMeshes[i].visible = false;
+      }
+    }
+    return data;
+  } catch (e) { return null; }
+}
+
+export function hasSave() {
+  try { return !!localStorage.getItem(KEY); } catch (e) { return false; }
+}
+
+export function clearSave() {
+  try { localStorage.removeItem(KEY); } catch (e) { /* best-effort */ }
 }

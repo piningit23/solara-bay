@@ -1,105 +1,174 @@
-import { clamp, distance } from './config.js';
-import { createPerson } from './models.js';
+// Solara Bay — combat: four weapons (pistol, scattergun, rapid SMG,
+// hunting rifle), weapon wheel on Tab, reload on R, ammo, enemies that
+// shoot back, muzzle particles, damage flashes and floating feedback.
 
-export const WEAPONS = [
-  { name: 'PISTOL', capacity: 12, damage: 34, shots: 1, spread: .025, delay: .28, range: 80 },
-  { name: 'SCATTERGUN', capacity: 6, damage: 22, shots: 6, spread: .14, delay: .72, range: 35 },
-  { name: 'RAPID SMG', capacity: 32, damage: 13, shots: 1, spread: .065, delay: .095, range: 62 }
-];
-export function createCombat(scene, state) {
-  const enemies = [];
-  const firearms = [];
-  let fireClock = 0;
-  function spawnGuard(x, z, name = 'DOCK CREW') {
-    const mesh = createPerson('#943f38', true);
-    mesh.position.set(x, 0, z);
-    scene.add(mesh);
-    const enemy = { x, z, mesh, health: 75, cooldown: .5 + Math.random() * 2, name, down: false };
-    enemies.push(enemy);
-    return enemy;
-  }
-  function shoot() {
-    if (state.player.car) return;
-    const weapon = WEAPONS[state.player.weapon];
-    const from = { x: state.player.x, y: 1.5, z: state.player.z };
-    state.effects.burst(from.x, from.y, from.z, '#ffd28a', 5, 2.2);
-    state.audio.effect('shot');
-    state.pedestrians.fleeNear(from.x, from.z);
-    state.raiseWanted(1, 'Discharge of firearm');
-    for (let i = 0; i < weapon.shots; i++) {
-      let angle = state.player.angle + (Math.random() - .5) * weapon.spread * 2;
-      if (i === 0) angle = state.player.angle;
-      const ray = { x: from.x + Math.sin(angle) * weapon.range, z: from.z + Math.cos(angle) * weapon.range };
-      let nearest = null;
-      let best = weapon.range;
-      for (const target of [...enemies, ...state.police.officers, ...state.pedestrians.list.filter(p => !p.down)]) {
-        const d = distance(from, target);
-        if (d >= best) continue;
-        const aim = Math.atan2(target.x - from.x, target.z - from.z);
-        const diff = Math.abs(Math.atan2(Math.sin(aim - angle), Math.cos(aim - angle)));
-        if (diff < .055 + weapon.spread * .4) { nearest = target; best = d; }
-      }
-      if (nearest) {
-        nearest.health -= weapon.damage;
-        state.effects.tracer(from, nearest, '#ffe98a');
-        state.effects.burst(nearest.x, 1.4, nearest.z, '#ffc66c', 5, 3);
-        state.feedback(`-${weapon.damage}`, nearest.x, nearest.z);
-        if (nearest.health <= 0 && !nearest.down) {
-          if (nearest.name) { nearest.down = true; nearest.mesh.rotation.z = Math.PI / 2; state.player.kills++; }
-          else if (state.police.officers.includes(nearest)) { nearest.down = true; nearest.mesh.rotation.z = Math.PI / 2; state.raiseWanted(1, 'Officer down'); }
-          else state.pedestrians.hit(nearest);
-          state.missions.onKill(nearest);
-        }
-      } else state.effects.tracer(from, ray, '#ffe98a');
-    }
-  }
-  function update(dt, input) {
-    fireClock -= dt;
-    if ((input.fire || input.tap('Space')) && fireClock <= 0 && !state.player.car) {
-      const weapon = WEAPONS[state.player.weapon];
-      if (state.player.ammo[state.player.weapon] > 0) {
-        state.player.ammo[state.player.weapon]--;
-        fireClock = weapon.delay;
-        shoot();
-      } else state.toast('OUT OF AMMO — R TO RELOAD AT THE SAFEHOUSE');
-    }
-    if (input.tap('Digit1')) state.player.weapon = 0;
-    if (input.tap('Digit2')) state.player.weapon = 1;
-    if (input.tap('Digit3')) state.player.weapon = 2;
-    if (input.tap('KeyR')) {
-      const weapon = WEAPONS[state.player.weapon];
-      const missing = Math.max(0, weapon.capacity - state.player.ammo[state.player.weapon]);
-      if (state.player.cash >= 15 && missing) {
-        state.player.cash -= 15;
-        state.player.ammo[state.player.weapon] = weapon.capacity;
-        state.audio.effect('reload');
-        state.toast(`${weapon.name} RELOADED`);
-      }
-    }
-    for (const enemy of enemies) {
-      if (enemy.down) continue;
-      const d = distance(enemy, state.player.car || state.player);
-      enemy.cooldown -= dt;
-      if (d < 31 && enemy.cooldown <= 0) {
-        enemy.cooldown = 1.3 + Math.random() * .8;
-        hitPlayer(8);
-        state.effects.tracer(enemy, state.player, '#ff9f75');
-      }
-    }
-  }
-  function hitPlayer(amount) {
-    const reduction = Math.min(amount * .82, state.player.armor * .35);
-    state.player.armor = Math.max(0, state.player.armor - amount * .2);
-    state.player.health = Math.max(0, state.player.health - amount + reduction);
-    state.damageFlash = .34;
-    if (state.player.health <= 0 && state.wanted) state.bust('Mara was taken down in the pursuit');
-  }
-  function feedback(text, x, z) {
-    const node = document.querySelector('#feedback');
-    node.textContent = text;
-    node.style.left = `${42 + Math.random() * 16}%`;
-    node.style.top = `${48 + Math.random() * 10}%`;
-    state.feedbackTimer = .5;
-  }
-  return { enemies, firearms, spawnGuard, update, hitPlayer, shoot };
+import * as THREE from 'three';
+import { G } from './state.js';
+import { WEAPONS } from './config.js';
+import { makePersonMesh } from './models.js';
+import { keys, pressed } from './input.js';
+import { playShot, playHit } from './audio.js';
+import { scarePedestrians } from './pedestrians.js';
+import { addWanted, hurtPlayer } from './police.js';
+import { carPos } from './driving.js';
+
+export function initWeapons() {
+  G.weapons = WEAPONS.map((w) => ({ ...w, ammo: w.ammo, mag: w.mag, reloading: 0, cooldown: 0 }));
+  G.weaponIndex = 0;
 }
+
+export function currentWeapon() { return G.weapons[G.weaponIndex]; }
+
+export function spawnEnemy(x, z, hp) {
+  const mesh = makePersonMesh(0x8a2a2a, 0x222222);
+  mesh.position.set(x, 0.3, z);
+  G.scene.add(mesh);
+  const e = { mesh, pos: mesh.position, yaw: 0, hp: hp || 60, shootTimer: 1 + Math.random() };
+  G.enemies.push(e);
+  return e;
+}
+
+export function clearEnemies() {
+  for (const e of G.enemies) G.scene.remove(e.mesh);
+  G.enemies = [];
+}
+
+// tracer line + muzzle flash, removed after a short life
+const tracers = [];
+export function spawnTracer(from, to, color) {
+  const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 }));
+  G.scene.add(line);
+  tracers.push({ line, life: 0.12 });
+}
+
+export function updateTracers(dt) {
+  for (let i = tracers.length - 1; i >= 0; i--) {
+    tracers[i].life -= dt;
+    if (tracers[i].life <= 0) {
+      G.scene.remove(tracers[i].line);
+      tracers.splice(i, 1);
+    }
+  }
+}
+
+function shoot() {
+  const w = currentWeapon();
+  if (!w || w.cooldown > 0 || w.reloading > 0) return;
+  if (w.mag <= 0) { startReload(); return; }
+  w.mag--;
+  w.cooldown = w.rate;
+  G.stats.shots++;
+  playShot(w.id);
+  const origin = G.onFoot ? G.player.pos.clone().setY(1.5) : G.car.pos.clone().setY(1.2);
+  // aim from the camera: forward ray from the camera through screen centre
+  const dir = new THREE.Vector3();
+  G.camera.getWorldDirection(dir);
+  const pp = carPos();
+  scarePedestrians(pp.x, pp.z, 30);
+  if (G.wanted < 1) addWanted(1, 'Shots fired');
+  for (let p = 0; p < w.pellets; p++) {
+    const d = dir.clone();
+    d.x += (Math.random() - 0.5) * w.spread * 2;
+    d.y += (Math.random() - 0.5) * w.spread * 2;
+    d.z += (Math.random() - 0.5) * w.spread * 2;
+    d.normalize();
+    const end = origin.clone().addScaledVector(d, w.range);
+    // hit test: enemies, officers, vigilante car, police cars
+    let hit = null, hitDist = w.range;
+    const targets = [];
+    for (const e of G.enemies) targets.push({ pos: e.pos, radius: 1.2, obj: e, kind: 'enemy' });
+    for (const o of G.officers) targets.push({ pos: o.pos, radius: 1.2, obj: o, kind: 'officer' });
+    if (G.vigilante) targets.push({ pos: G.vigilante.pos, radius: 2.2, obj: G.vigilante, kind: 'vigilante' });
+    for (const t of targets) {
+      const to = t.pos.clone().sub(origin);
+      const along = to.dot(d);
+      if (along < 0 || along > w.range) continue;
+      const perp = to.clone().addScaledVector(d, -along).length();
+      if (perp < t.radius && along < hitDist) { hit = t; hitDist = along; }
+    }
+    if (hit) {
+      end.copy(origin).addScaledVector(d, hitDist);
+      hit.obj.hp -= w.damage;
+      G.stats.hits++;
+      playHit();
+      G.messages.push('HIT — ' + w.name + ' ' + w.damage + ' dmg');
+      if (hit.kind === 'enemy' && hit.obj.hp <= 0) {
+        G.scene.remove(hit.obj.mesh);
+        G.enemies.splice(G.enemies.indexOf(hit.obj), 1);
+        G.stats.takedowns++;
+        G.messages.push('Guard down.');
+      }
+      if (hit.kind === 'officer' && hit.obj.hp <= 0) {
+        G.scene.remove(hit.obj.mesh);
+        G.officers.splice(G.officers.indexOf(hit.obj), 1);
+        addWanted(1, 'Officer down');
+      }
+      if (hit.kind === 'vigilante') {
+        hit.obj.hp -= w.damage;
+      }
+    }
+    spawnTracer(origin, end, w.color);
+  }
+  G.shake = Math.min(0.4, G.shake + 0.08);
+}
+
+function startReload() {
+  const w = currentWeapon();
+  if (w.reloading > 0 || w.ammo <= 0 || w.mag >= w.magSize) return;
+  w.reloading = w.reload;
+}
+
+export function updateCombat(dt) {
+  const w = currentWeapon();
+  if (!w) return;
+  w.cooldown = Math.max(0, w.cooldown - dt);
+  if (w.reloading > 0) {
+    w.reloading -= dt;
+    if (w.reloading <= 0) {
+      const need = WEAPONS[G.weaponIndex].mag - w.mag;
+      const take = Math.min(need, w.ammo);
+      w.mag += take;
+      w.ammo -= take;
+      w.reloading = 0;
+    }
+  }
+  // weapon switching 1–4
+  for (let i = 0; i < 4; i++) {
+    if (pressed['Digit' + (i + 1)]) { G.weaponIndex = i; G.wheelOpen = false; }
+  }
+  if (pressed['KeyR']) startReload();
+  // weapon wheel: hold Tab
+  G.wheelOpen = !!keys['Tab'];
+  // fire on click (hold for SMG)
+  if (clickPending || (mouseDownHeld() && w.id === 'smg')) shoot();
+  clickPending = false;
+  // enemies shoot back
+  for (const e of [...G.enemies]) {
+    const pp = carPos();
+    const d = Math.hypot(e.pos.x - pp.x, e.pos.z - pp.z);
+    e.yaw = Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z);
+    e.mesh.rotation.y = e.yaw;
+    e.shootTimer -= dt;
+    if (d < 40 && e.shootTimer <= 0) {
+      e.shootTimer = 1.4 + Math.random();
+      const from = e.pos.clone().setY(1.4);
+      const to = pp.clone().setY(1.2);
+      spawnTracer(from, to, 0xff5544);
+      if (Math.random() < 0.55) hurtPlayer(7);
+    }
+    // guards close in slowly
+    if (d > 12 && d < 50) {
+      e.pos.x += Math.sin(e.yaw) * 2.2 * dt;
+      e.pos.z += Math.cos(e.yaw) * 2.2 * dt;
+      e.mesh.position.copy(e.pos);
+    }
+  }
+  updateTracers(dt);
+}
+
+let mouseHeld = false;
+let clickPending = false;
+export function setMouseHeld(v) { mouseHeld = v; }
+export function queueClick() { clickPending = true; }
+function mouseDownHeld() { return mouseHeld; }

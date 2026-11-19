@@ -1,196 +1,270 @@
-import * as THREE from 'three';
-import { TITLE, GARAGE } from './config.js';
-import { createRenderer } from './render.js';
-import { buildIslandCity } from './world.js';
-import { createInput } from './input.js';
-import { createAudio } from './audio.js';
-import { createRadio } from './radio.js';
-import { createEffects } from './effects.js';
-import { createPlayer, updateOnFoot, syncPlayerMesh } from './player.js';
-import { createDriving } from './driving.js';
-import { createPedestrians } from './pedestrians.js';
-import { createCombat } from './combat.js';
-import { createMissions, STORY } from './missions.js';
-import { createPolice } from './police.js';
-import { createHelicopter } from './helicopter.js';
-import { createHud, titleMenu } from './hud.js';
-import { createSave } from './save.js';
-import { openShop } from './shop.js';
-import { stageScreenshot } from './shots.js';
+// Solara Bay — main game loop: renderer, camera, menus, mode machine
+// (title / playing / paused / busted / ending) and per-frame updates.
 
-const view = createRenderer();
-const { scene } = view;
-const world = buildIslandCity(scene);
-const player = createPlayer(scene);
-const state = { time: 0, player, world, wanted: 0, heatTimer: 0, missionIndex: 0, unlockedMissions: 1, damageFlash: 0, feedbackTimer: 0, shake: 0, missionTimer: 0, endGame: false, screenshotStage: null, toast: () => {}, raiseWanted: () => {}, bust: () => {}, save: () => {}, effects: null, audio: null, combat: null, police: null, missions: null, pedestrians: null, driving: null, helicopter: null, radio: null, crates: [] };
-state.input = createInput();
-state.audio = createAudio();
-state.effects = createEffects(scene);
-state.radio = createRadio(state.audio);
-state.driving = createDriving(scene, state);
-state.pedestrians = createPedestrians(scene, state);
-state.combat = createCombat(scene, state);
-state.missions = createMissions(state);
-state.police = createPolice(scene, state);
-state.helicopter = createHelicopter(scene);
-state.saveSystem = createSave(state);
-state.save = state.saveSystem.save;
-state.missionIndex = 0;
-state.raiseWanted = (amount, crime) => {
-  state.wanted = Math.min(5, state.wanted + amount);
-  state.heatTimer = 0;
-  state.player.lastCrime = { x: state.player.x, z: state.player.z };
-  state.toast(`${crime.toUpperCase()} · ${'★'.repeat(state.wanted)}`);
-  state.police.update(0.01);
-};
-state.bust = reason => {
-  if (state.paused || state.busted) return;
-  state.busted = true;
-  const menu = document.querySelector('#menu');
-  menu.innerHTML = `<div class="menu-content"><div class="title-kicker">SOLARA BAY POLICE DEPARTMENT</div><h2>BUSTED</h2><p class="story">${reason}. Mara’s story isn’t over yet.</p><div class="buttons"><button class="primary" id="retry">RETRY FROM SAFEHOUSE</button><button id="save-exit">SAVE</button></div></div>`;
-  menu.querySelector('#retry').onclick = () => { state.busted = false; player.health = 100; player.armor = 0; player.x = GARAGE.x; player.z = GARAGE.z; player.car = null; player.mesh.visible = true; state.wanted = 0; state.missions.start(state.missionIndex); menu.innerHTML = ''; };
-  menu.querySelector('#save-exit').onclick = () => { state.save(); state.busted = false; menu.innerHTML = ''; };
-};
-const hud = createHud(state);
-state.toast = text => hud.message(text);
-const crates = [];
-for (let i = 0; i < 3; i++) {
-  const mesh = new THREE.Group();
-  const crate = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.4, 2.6), new THREE.MeshStandardMaterial({ color: i % 2 ? '#d27e4b' : '#e7bc63', roughness: .82 }));
-  crate.position.y = 1.4;
-  crate.castShadow = true;
-  mesh.add(crate);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.68, .22, 2.68), new THREE.MeshStandardMaterial({ color: '#496a69' }));
-  stripe.position.y = 1.4;
-  mesh.add(stripe);
-  mesh.position.set(155 + i * 11, 0, -77 - i * 14);
-  scene.add(mesh);
-  crates.push({ x: mesh.position.x, z: mesh.position.z, mesh });
-}
-state.crates = crates;
-const missionMarker = new THREE.Group();
-const ring = new THREE.Mesh(new THREE.TorusGeometry(3.4, .24, 8, 36), new THREE.MeshBasicMaterial({ color: '#f3cd74' }));
-ring.rotation.x = Math.PI / 2;
-missionMarker.add(ring);
-const beam = new THREE.Mesh(new THREE.CylinderGeometry(.15, 1.8, 18, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#f8d77e', transparent: true, opacity: .15, side: THREE.DoubleSide, depthWrite: false }));
-beam.position.y = 9;
-missionMarker.add(beam);
-scene.add(missionMarker);
-const input = state.input;
-state.missions.start(0);
-state.saveSystem.load();
-state.missionIndex = Math.min(state.missionIndex, STORY.length - 1);
-state.missions.start(state.missionIndex);
-const params = new URLSearchParams(location.search);
-const staged = stageScreenshot(state, params);
-if (params.get('debug') === '1') window.solaraDebug = state;
-let running = false;
-let last = performance.now();
-let gameStarted = false;
-const title = document.title;
-document.title = TITLE;
-function startGame(continueRun = false) {
-  state.audio.start();
-  gameStarted = true;
-  state.paused = false;
-  document.querySelector('#menu').innerHTML = '';
-  if (!staged) {
-    if (continueRun) state.saveSystem.load();
-    else { state.missionIndex = 0; player.cash = 2200; player.health = 100; state.wanted = 0; }
-    state.unlockedMissions = Math.max(state.unlockedMissions, state.missionIndex + 1);
-    state.missions.start(state.missionIndex);
+import * as THREE from 'three';
+import { G } from './state.js';
+import { MISSIONS } from './config.js';
+import { mulberry32 } from './random.js';
+import { initInput, keys, pressed, consumeMouse, clearPressed, mouseDown } from './input.js';
+import { initAudio, resumeAudio, setEngine, startStation } from './audio.js';
+import { initRadio, cycleStation } from './radio.js';
+import { buildWorld, setDusk } from './world.js';
+import { createPlayer, updatePlayer, camYaw, camPitch, setCam } from './player.js';
+import { spawnParkedCars, updateDriving, updateJacking, enterCar, exitCar, nearestParkedCar, jacking } from './driving.js';
+import { spawnTraffic, updateTraffic } from './traffic.js';
+import { spawnPedestrians, updatePedestrians } from './pedestrians.js';
+import { updatePolice, setWanted, addWanted } from './police.js';
+import { updateHelicopter } from './helicopter.js';
+import { updateCrew } from './crew.js';
+import { updateActivities } from './activities.js';
+import { initWeapons, updateCombat, setMouseHeld, queueClick } from './combat.js';
+import { startMission, updateMissions, currentMissionDef, abandonMission } from './missions.js';
+import { initHud, updateHud } from './hud.js';
+import { openShop, closeShop, isShopOpen } from './shop.js';
+import { saveGame, loadGame, hasSave } from './save.js';
+import { applyShot } from './shots.js';
+import { GARAGE } from './config.js';
+import { carPos } from './driving.js';
+
+let renderer, scene, camera;
+let rng;
+let shotMode = null;
+
+function $(id) { return document.getElementById(id); }
+
+export function init() {
+  const q = new URLSearchParams(window.location.search);
+  const seed = Number(q.get('seed') || 1);
+  G.seed = seed;
+  rng = mulberry32(seed);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  $('game-canvas').appendChild(renderer.domElement);
+  G.renderer = renderer;
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 900);
+  G.scene = scene;
+  G.camera = camera;
+
+  buildWorld(scene, seed);
+  createPlayer(scene);
+  spawnParkedCars(scene, rng);
+  spawnTraffic(scene, 16, rng);
+  spawnPedestrians(scene, 26, rng);
+  initWeapons();
+  initRadio();
+  initHud();
+  initInput(renderer.domElement);
+  initAudio();
+
+  // expose a tiny debug handle for the play-test (state only, no cheats in UI)
+  window.__solara = { G, startMission, setWanted };
+
+  bindMenus();
+  buildMissionSelect();
+  updateTitleRank();
+
+  shotMode = applyShot(scene);
+  if (shotMode && shotMode !== 'start') {
+    // staged screenshots start straight in play
+    G.mode = 'playing';
+    showScreen(null);
+    if (!G.mission && G.missionIndex < MISSIONS.length) startMission(G.missionIndex);
+  } else {
+    G.mode = 'title';
+    showScreen('title-screen');
   }
-  running = true;
-  document.querySelector('#hud').hidden = false;
-}
-function showPause() {
-  if (!gameStarted) return;
-  state.paused = true;
-  state.save();
-  const menu = document.querySelector('#menu');
-  menu.innerHTML = `<div class="menu-content"><div class="title-kicker">SOLARA BAY / PAUSED</div><h2>TAKE A BREATH.</h2><p class="story">Cash $${player.cash.toLocaleString()} · ${state.missions.current().name} · autosave on mission complete.</p><div class="buttons"><button class="primary" id="resume">BACK TO THE ISLAND</button><button id="save">SAVE GAME</button><button id="quit">TITLE SCREEN</button></div><p class="key-guide">ESC RESUME &nbsp;·&nbsp; The safehouse clears heat faster.</p></div>`;
-  menu.querySelector('#resume').onclick = () => { state.paused = false; input.end(); menu.innerHTML = ''; };
-  menu.querySelector('#save').onclick = () => { state.save(); menu.querySelector('.story').textContent = 'GAME SAVED TO THIS BROWSER.'; };
-  menu.querySelector('#quit').onclick = () => { gameStarted = false; running = false; menu.innerHTML = ''; titleMenu(() => startGame(false), () => startGame(true), selectMissions); };
-}
-function selectMissions() {
-  const menu = document.querySelector('#menu');
-  menu.innerHTML = `<div class="menu-content"><div class="title-kicker">MARA VALE / STORY ARCHIVE</div><h2>MISSION SELECT</h2><p class="story">Completed runs unlock replay access. Current progress saves locally.</p><div id="mission-list"></div><div class="buttons"><button class="primary" id="back">BACK</button></div></div>`;
-  const list = menu.querySelector('#mission-list');
-  STORY.forEach((mission, index) => {
-    const button = document.createElement('button');
-    button.style.margin = '4px';
-    button.disabled = index >= state.unlockedMissions;
-    button.textContent = `${String(index + 1).padStart(2, '0')} · ${mission.name} ${button.disabled ? '🔒' : ''}`;
-    button.onclick = () => { state.missions.select(index); startGame(true); };
-    list.append(button);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
   });
-  menu.querySelector('#back').onclick = () => titleMenu(() => startGame(false), () => startGame(true), selectMissions);
+
+  renderer.setAnimationLoop(tick);
 }
-if (staged === 'start') {
-  titleMenu(() => startGame(false), () => startGame(true), selectMissions);
-} else {
-  startGame(true);
-  state.paused = false;
+
+function bindMenus() {
+  $('btn-start').addEventListener('click', () => { beginGame(false); });
+  $('btn-continue').addEventListener('click', () => { beginGame(true); });
+  $('btn-resume').addEventListener('click', () => { G.mode = 'playing'; showScreen(null); });
+  $('btn-save').addEventListener('click', () => { saveGame(); flash('Game saved.'); });
+  $('btn-quit-title').addEventListener('click', () => { G.mode = 'title'; showScreen('title-screen'); updateTitleRank(); });
+  $('btn-retry').addEventListener('click', () => { retryAfterBusted(); });
+  $('btn-ending').addEventListener('click', () => { G.mode = 'title'; showScreen('title-screen'); });
+  $('btn-mission-select').addEventListener('click', () => {
+    $('mission-select').style.display = $('mission-select').style.display === 'block' ? 'none' : 'block';
+  });
+  document.querySelectorAll('#mission-select button').forEach((b) => {
+    b.addEventListener('click', () => {
+      const idx = Number(b.getAttribute('data-mission'));
+      if (idx > G.missionIndex) return; // locked
+      beginGame(false, idx);
+    });
+  });
 }
-function frame(now) {
-  requestAnimationFrame(frame);
-  const dt = Math.min(.035, Math.max(0, (now - last) / 1000));
-  last = now;
-  if (!running || state.paused || state.busted || state.endGame) {
-    if (state.endGame) {
-      const menu = document.querySelector('#menu');
-      if (!menu.querySelector('#ending')) menu.innerHTML = `<div class="menu-content" id="ending"><div class="title-kicker">SOLARA BAY / DAY SEVEN</div><h2>KING OF SOLARA</h2><p class="story">The lighthouse turns across the harbor. The ledger is home. The debt is gone. Mara Vale has her island back.</p><div class="buttons"><button class="primary" id="free-roam">FREE ROAM</button><button id="ending-save">SAVE</button></div></div>`;
-      menu.querySelector('#free-roam').onclick = () => { state.endGame = false; gameStarted = true; running = true; menu.innerHTML = ''; };
-      menu.querySelector('#ending-save').onclick = () => state.save();
+
+function buildMissionSelect() {
+  const box = $('mission-select-list');
+  box.innerHTML = MISSIONS.map((m, i) =>
+    '<button data-mission="' + i + '" ' + (i > G.missionIndex ? 'disabled' : '') + '>' +
+    (i > G.missionIndex ? '🔒 ' : '✓ ') + (i + 1) + '. ' + m.title + ' — $' + m.reward + '</button>'
+  ).join('');
+}
+
+function updateTitleRank() {
+  const el = $('title-rank');
+  if (!el) return;
+  import('./respect.js').then((r) => {
+    el.textContent = 'Respect rank: ' + r.currentRank().name + ' (' + G.respect + ' pts)  •  Cash $' + Math.floor(G.cash) + '  •  Missions ' + Math.min(G.missionIndex, 12) + '/12';
+  });
+  $('btn-continue').style.display = hasSave() ? 'inline-block' : 'none';
+}
+
+function showScreen(id) {
+  for (const s of ['title-screen', 'pause-screen', 'busted-screen', 'ending-screen']) {
+    const el = $(s);
+    if (el) el.style.display = s === id ? 'flex' : 'none';
+  }
+  $('hud').style.display = id ? 'none' : 'block';
+}
+
+function beginGame(continued, missionIdx) {
+  resumeAudio();
+  startStation(G.station);
+  if (continued) loadGame();
+  else if (typeof missionIdx === 'number') { G.missionIndex = missionIdx; }
+  G.mode = 'playing';
+  G.health = 100;
+  showScreen(null);
+  buildMissionSelect();
+  if (!G.mission && G.missionIndex < MISSIONS.length) startMission(G.missionIndex);
+}
+
+function retryAfterBusted() {
+  G.health = 100;
+  G.busted = false;
+  setWanted(0);
+  G.player.pos.set(20, 0.3, 80);
+  if (G.car) { exitCar(); }
+  G.mode = 'playing';
+  showScreen(null);
+  if (!G.mission && G.missionIndex < MISSIONS.length) startMission(G.missionIndex);
+}
+
+function flash(text) { G.messages.push(text); }
+
+let lastTime = 0;
+function tick(t) {
+  const dt = Math.min(0.05, (t - lastTime) / 1000 || 0.016);
+  lastTime = t;
+  G.dt = dt;
+  G.time += dt;
+
+  const mouse = consumeMouse();
+  setMouseHeld(mouseDown);
+  if (mouse.click) queueClick();
+
+  if (G.mode === 'playing') {
+    // global keys
+    if (pressed['Escape']) {
+      if (isShopOpen()) closeShop();
+      else { G.mode = 'paused'; showScreen('pause-screen'); }
     }
-    view.draw();
-    return;
-  }
-  state.time += dt;
-  if (state.screenshotStage) {
-    state.helicopter.update(dt, state);
-    hud.update(dt);
-    view.follow(state, dt);
-    view.draw();
-    input.end();
-    return;
-  }
-  if (input.tap('Escape')) { if (state.paused) { state.paused = false; document.querySelector('#menu').innerHTML = ''; } else showPause(); }
-  if (input.tap('KeyQ')) { state.radio.cycle(); state.toast(`TUNED TO ${state.radio.current.name}`); }
-  if (input.tap('KeyF') && Math.hypot((state.player.car || player).x - GARAGE.x, (state.player.car || player).z - GARAGE.z) < 23) { state.paused = true; openShop(state); }
-  if (input.tap('KeyE')) {
-    if (player.car) state.driving.exit();
-    else {
-      const car = state.driving.nearParked();
-      if (car && Math.hypot(player.x - car.x, player.z - car.z) < 11) { player.jacking = .65; state.raiseWanted(1, 'Vehicle theft'); window.setTimeout(() => { if (player.jacking > 0) { player.jacking = 0; state.driving.enter(car); } }, 500); }
-      else state.toast('NO VEHICLE IN REACH');
+    if (pressed['KeyF']) {
+      const pp = carPos();
+      if (Math.hypot(pp.x - GARAGE.x, pp.z - GARAGE.z) < 22) {
+        if (isShopOpen()) closeShop(); else openShop();
+      }
     }
+    if (pressed['KeyQ']) {
+      const s = cycleStation();
+      flash('Radio: ' + s);
+    }
+    if (pressed['KeyE'] && !isShopOpen()) {
+      if (G.onFoot) {
+        const car = nearestParkedCar(5);
+        if (car) enterCar(car);
+      } else {
+        exitCar();
+      }
+    }
+    if (pressed['KeyM']) {
+      if (!G.mission && G.missionIndex < MISSIONS.length) startMission(G.missionIndex);
+    }
+
+    updateJacking(dt);
+    if (G.onFoot) updatePlayer(dt, mouse);
+    else updateDriving(dt, mouse);
+    updateTraffic(dt);
+    updatePedestrians(dt);
+    updatePolice(dt);
+    updateHelicopter(dt);
+    updateCrew(dt);
+    updateActivities(dt);
+    updateCombat(dt);
+    updateMissions(dt);
+    updateCamera(dt, mouse);
+    updateHud(dt);
+    setEngine(G.car ? Math.abs(G.car.speed) / 30 : 0, !!G.car);
+    // waypoint beacon spin
+    if (G.waypointMesh && G.waypointMesh.visible) G.waypointMesh.rotation.y += dt;
+    // NOS exhaust flames
+    if (G.boosting && G.car) {
+      G.shake = Math.min(0.3, G.shake + 0.05);
+      camera.fov = Math.min(78, camera.fov + dt * 20);
+      camera.updateProjectionMatrix();
+    } else if (camera.fov > 68) {
+      camera.fov = Math.max(68, camera.fov - dt * 30);
+      camera.updateProjectionMatrix();
+    }
+    if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 1.5);
+  } else if (G.mode === 'paused') {
+    if (pressed['Escape']) { G.mode = 'playing'; showScreen(null); }
+  } else if (G.mode === 'busted') {
+    showScreen('busted-screen');
+  } else if (G.mode === 'ending') {
+    showScreen('ending-screen');
+    $('ending-text').textContent = 'Mara Vale paid the harbor debt. 12 missions, $' +
+      Math.floor(G.cash) + ' earned, ' + G.respect + ' respect. QUEEN OF SOLARA.';
+  } else {
+    // title screen: slow orbit over the city
+    const a = G.time * 0.05;
+    camera.position.set(Math.cos(a) * 160, 70, Math.sin(a) * 160);
+    camera.lookAt(0, 0, 0);
   }
-  if (input.tap('KeyS') && input.down('ControlLeft')) { state.save(); state.toast('GAME SAVED'); }
-  updateOnFoot(player, input, world, dt, state.time);
-  state.driving.updateTraffic(dt);
-  state.driving.updatePlayerCar(dt, input, world);
-  syncPlayerMesh(player);
-  state.pedestrians.update(dt);
-  state.combat.update(dt, input);
-  state.police.update(dt);
-  state.helicopter.update(dt, state);
-  state.missions.update(dt);
-  state.effects.update(dt);
-  state.radio.update(dt);
-  state.audio.update(state, dt);
-  view.setNight(state.missions.current().type === 'timed' && Math.sin(state.time * .025) < -.25);
-  const waypoint = state.missions.position();
-  if (waypoint) { missionMarker.position.set(waypoint.x, 0, waypoint.z); missionMarker.rotation.y += dt * .45; }
-  for (const crate of crates) if (crate.mesh.visible) crate.mesh.rotation.y = Math.sin(state.time * 1.5 + crate.x) * .13;
-  state.shake = Math.max(0, state.shake - dt * .55);
-  state.damageFlash = Math.max(0, state.damageFlash - dt * 1.8);
-  state.feedbackTimer = Math.max(0, state.feedbackTimer - dt);
-  state.player.busting = Math.max(0, state.player.busting - dt * .4);
-  hud.update(dt);
-  view.follow(state, dt);
-  view.draw();
-  input.end();
+
+  // keep the world animating behind menus
+  if (G.mode !== 'playing') {
+    updateTraffic(dt * 0.5);
+    updatePedestrians(dt * 0.5);
+  }
+
+  renderer.render(scene, camera);
+  clearPressed();
 }
-requestAnimationFrame(frame);
+
+function updateCamera(dt, mouse) {
+  const target = G.onFoot ? G.player.pos : G.car.pos;
+  // forward direction the camera looks along
+  const fx = G.onFoot ? Math.sin(camYaw) : Math.sin(G.car.yaw);
+  const fz = G.onFoot ? -Math.cos(camYaw) : Math.cos(G.car.yaw);
+  const back = G.coverCam ? 26 : 11;
+  const height = G.coverCam ? 9 : 5;
+  const cx = target.x - fx * back;
+  const cz = target.z - fz * back;
+  const cy = target.y + height;
+  camera.position.set(cx, cy, cz);
+  if (G.shake > 0) {
+    camera.position.x += (Math.random() - 0.5) * G.shake;
+    camera.position.y += (Math.random() - 0.5) * G.shake;
+  }
+  camera.lookAt(target.x, target.y + 2, target.z);
+}
+
+init();

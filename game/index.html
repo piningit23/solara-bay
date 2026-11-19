@@ -1,26 +1,102 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#112f38">
-  <title>SOLARA BAY: island-city crime game — 8 story missions, 5-star police and helicopter chases, car radio, safehouse saves</title>
-  <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="./src/style.css">
-  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.min.js"}}</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLARA BAY — island-city crime game</title>
+<link rel="stylesheet" href="./src/style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js" } }
+</script>
 </head>
 <body>
-  <canvas id="view"></canvas>
-  <div id="hud" hidden>
-    <header><div class="brand">SOLARA<span> BAY</span><small>THE ISLAND IS YOURS.</small></div><div id="status"></div></header>
-    <section id="objective"></section>
-    <div id="toast"></div><div id="feedback"></div><div id="crosshair">+</div>
-    <aside id="map-panel"><div class="map-label">SOLARA ISLAND <span id="district"></span></div><canvas id="minimap" width="230" height="230"></canvas><div class="map-footer">N ↑ <span>LIVE / SBPD DISPATCH</span></div></aside>
-    <section id="telemetry"></section><section id="radio"></section>
-    <footer id="controls">WASD MOVE / DRIVE &nbsp; E ENTER / EXIT &nbsp; SHIFT RUN / NOS &nbsp; CLICK FIRE &nbsp; 1–3 WEAPONS &nbsp; R RELOAD &nbsp; Q RADIO &nbsp; ESC PAUSE</footer>
-    <div id="prompt"></div><div id="vignette"></div>
+<div id="game-canvas"></div>
+<div id="damage-vignette"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="hud-top-left">
+    <div id="hud-cash">$0</div>
+    <div id="hud-stars">☆☆☆☆☆</div>
+    <div id="hud-health-bar"><div id="hud-health-fill"></div></div>
+    <div id="hud-health-text">HP 100</div>
+    <div id="hud-respect-bar"><div id="hud-respect-fill"></div></div>
+    <div id="hud-respect-text">RESPECT — DRIFTER (0)</div>
   </div>
-  <div id="menu"></div>
-  <script type="module" src="./src/main.js"></script>
+  <div id="hud-mission">
+    <h2 id="hud-mission-title">FREE ROAM</h2>
+    <div id="hud-objective">Explore the island.</div>
+    <div id="hud-timer"></div>
+  </div>
+  <div id="hud-right">
+    <canvas id="minimap" width="180" height="180"></canvas>
+    <div id="hud-crew">DANTE — CREW</div>
+    <div id="hud-caches">CACHES 0/10</div>
+  </div>
+  <div id="hud-bottom-left">
+    <div id="hud-weapon">PISTOL</div>
+    <div id="hud-ammo">AMMO 12 / 60</div>
+    <div id="hud-radio">♪ BAY FM 88 — chill synthwave</div>
+    <div id="hud-ticker"></div>
+    <div id="hud-nos-bar"><div id="hud-nos-fill"></div></div>
+    <div id="hud-nos-label">NOS — hold SHIFT while driving</div>
+  </div>
+  <div id="hud-speed"></div>
+  <div id="hud-prompt"></div>
+  <div id="hud-messages"></div>
+  <div id="weapon-wheel"></div>
+</div>
+
+<!-- Title screen -->
+<div id="title-screen" class="screen">
+  <h1>SOLARA BAY</h1>
+  <h2>island-city crime game — 12 story missions, 5-star police and helicopter chases, crew and respect ranks, garage upgrades, car radio, safehouse saves</h2>
+  <p>Mara Vale owes the harbor crew. One week to pay it back — steal cars, run drops,
+  dodge five stars of heat, and take the lighthouse. An original open-world crime game.</p>
+  <div class="features">
+    12 story missions &nbsp;•&nbsp; 5-star wanted + police helicopter &nbsp;•&nbsp; Crew ally Dante Reyes<br>
+    Respect ranks &nbsp;•&nbsp; Garage upgrades &nbsp;•&nbsp; 4 weapons + weapon wheel &nbsp;•&nbsp; Car radio (3 stations)<br>
+    Taxi fares, vigilante bounties, 10 sunken caches &nbsp;•&nbsp; NOS boost &nbsp;•&nbsp; Roadblocks &nbsp;•&nbsp; Safehouse shop
+  </div>
+  <div id="title-rank"></div>
+  <div>
+    <button id="btn-start">START</button>
+    <button id="btn-continue" class="secondary">CONTINUE</button>
+    <button id="btn-mission-select" class="secondary">MISSION SELECT</button>
+  </div>
+  <div id="mission-select"><div id="mission-select-list"></div></div>
+  <p>Controls: WASD move / drive • Mouse drag orbit camera • Shift run / NOS • E steal &amp; exit car<br>
+  Click shoot • 1–4 weapons • Tab weapon wheel • R reload • Q radio • F shop at garage • Esc pause • M start mission</p>
+</div>
+
+<!-- Pause -->
+<div id="pause-screen" class="screen">
+  <h1>PAUSED</h1>
+  <p>Solara Bay waits for no one. Except now.</p>
+  <div>
+    <button id="btn-resume">RESUME</button>
+    <button id="btn-save" class="secondary">SAVE GAME</button>
+    <button id="btn-quit-title" class="secondary">QUIT TO TITLE</button>
+  </div>
+</div>
+
+<!-- Busted -->
+<div id="busted-screen" class="screen">
+  <h1>BUSTED</h1>
+  <p>The Solara Bay police caught Mara Vale. The harbor debt still stands.</p>
+  <div><button id="btn-retry">RETRY</button></div>
+</div>
+
+<!-- Ending -->
+<div id="ending-screen" class="screen">
+  <h1>QUEEN OF SOLARA</h1>
+  <p id="ending-text"></p>
+  <div><button id="btn-ending">BACK TO TITLE</button></div>
+</div>
+
+<!-- Shop -->
+<div id="shop-overlay"><div id="shop-list"></div></div>
+
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>
