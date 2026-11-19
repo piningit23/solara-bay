@@ -2,6 +2,8 @@
 // It copies this repository's game/ and screenshots/ beside this file into the
 // output directory and writes /output/dossier.json, the summary the judge reads,
 // using the vendored make.fun library. No network, no build step, no installs.
+// The program runs twice and both runs must write the same bytes, so it does
+// nothing time- or random-dependent: it only copies files and builds the dossier.
 //
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
@@ -13,6 +15,14 @@ import { buildDossier } from './vendor/makefun-game.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+
+// Fail loudly, with a readable message, if the entry folders are missing,
+// instead of dying inside cpSync with a bare filesystem error.
+for (const needed of ['game', 'screenshots']) {
+  if (!existsSync(join(here, needed))) {
+    throw new Error(`Solara Bay entry is missing ./${needed}/ beside main.ts — nothing to hand in.`);
+  }
+}
 
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
