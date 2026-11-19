@@ -81,9 +81,12 @@ export function makePlayerMesh() {
 
 export function makeHelicopterMesh() {
   const g = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.5, metalness: 0.4 });
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x6a8aaa, roughness: 0.5, metalness: 0.3 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 3.6), bodyMat);
   body.castShadow = true; g.add(body);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.25, 0.35, 3.65),
+    new THREE.MeshStandardMaterial({ color: 0xf5f5f0, roughness: 0.6 }));
+  stripe.position.y = 0.1; g.add(stripe);
   const nose = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.0, 1.0),
     new THREE.MeshStandardMaterial({ color: 0x1a2a3a, roughness: 0.2, metalness: 0.6 }));
   nose.position.set(0, -0.1, 2.1); g.add(nose);

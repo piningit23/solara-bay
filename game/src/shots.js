@@ -29,12 +29,13 @@ export function applyShot(scene) {
   }
 
   if (shot === 'cover') {
-    // Player driving a stolen car mid-chase: 5 stars, helicopter overhead,
-    // two police cars behind, roadblock ahead, Dante beside the player.
+    // Player driving a stolen car mid-chase on the east ring road (water on
+    // one side, city on the other): 5 stars, helicopter overhead, two police
+    // cars behind, roadblock ahead, Dante beside the player.
     setDusk(true);
     const car = nearestParkedCar(500) || G.cars[0];
     if (car) {
-      car.pos.set(-20, 0.3, 40);
+      car.pos.set(140, 0.3, 40);
       car.yaw = Math.PI;
       car.mesh.position.copy(car.pos);
       car.mesh.rotation.y = car.yaw;
@@ -44,13 +45,15 @@ export function applyShot(scene) {
     setWanted(5);
     spawnHelicopter(scene);
     if (G.heli) {
-      G.heli.pos.set(-14, 30, 18);
+      // low and ahead-left so the helicopter is inside the frame
+      G.heli.pos.set(136, 13, 6);
       G.heli.mesh.position.copy(G.heli.pos);
+      G.heliFrozen = true;
     }
     spawnRoadblock();
     spawnCrew(scene);
     if (G.crew) {
-      G.crew.pos.set(-14, 0.3, 40);
+      G.crew.pos.set(134, 0.3, 40);
       G.crew.mesh.position.copy(G.crew.pos);
       G.crew.yaw = Math.PI;
       G.crew.mesh.rotation.y = Math.PI;
@@ -60,14 +63,32 @@ export function applyShot(scene) {
     startMission(11);
     setCam(0, 0.32);
     G.coverCam = true;
+    G.camBack = 15;
+    G.camHeight = 6.5;
     return 'cover';
   }
 
   if (shot === 'on-foot') {
-    // Busy street: player on foot, traffic and pedestrians around, taxi marker.
-    G.player.pos.set(0, 0.3, 9);
+    // Busy street: player on foot at an intersection, traffic and
+    // pedestrians placed ahead so the frame is full.
+    G.player.pos.set(20, 0.3, 60);
     G.player.yaw = Math.PI;
-    setCam(2.6, 0.4);
+    setCam(Math.PI, 0.4);
+    G.camBack = 8;
+    G.camHeight = 4;
+    // pull traffic cars and pedestrians into the frame ahead of the player
+    for (let i = 0; i < 3 && i < G.traffic.length; i++) {
+      const t = G.traffic[i];
+      t.pos.set(20, 0.3, 74 + i * 14);
+      t.mesh.position.copy(t.pos);
+      t.yaw = 0; t.mesh.rotation.y = 0; t.speed = 0;
+    }
+    for (let i = 0; i < 5 && i < G.peds.length; i++) {
+      const p = G.peds[i];
+      p.pos.set(28 + (i % 2) * 3, 0.3, 66 + i * 5);
+      p.mesh.position.copy(p.pos);
+      p.pause = 99;
+    }
     // a taxi fare marker nearby
     import('./activities.js').then((a) => a.spawnTaxiFare());
     return 'on-foot';
@@ -83,6 +104,11 @@ export function applyShot(scene) {
     spawnEnemy(DOCKS.x + 8, DOCKS.z + 10, 60);
     setWanted(3);
     spawnHelicopter(scene);
+    if (G.heli) {
+      G.heli.pos.set(DOCKS.x + 6, 10, DOCKS.z - 20);
+      G.heli.mesh.position.copy(G.heli.pos);
+      G.heliFrozen = true;
+    }
     return 'police';
   }
 

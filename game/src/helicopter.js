@@ -30,6 +30,8 @@ export function despawnHelicopter() {
 export function updateHelicopter(dt) {
   const h = G.heli;
   if (!h) return;
+  if (h.mesh.userData.rotor) h.mesh.userData.rotor.rotation.y += dt * 22;
+  if (G.heliFrozen) return;
   const pp = carPos();
   h.angle += dt * 0.45;
   const radius = 22;
@@ -40,7 +42,6 @@ export function updateHelicopter(dt) {
   h.pos.y = 30 + Math.sin(G.time * 0.8) * 2;
   h.yaw = Math.atan2(pp.x - h.pos.x, pp.z - h.pos.z);
   h.mesh.rotation.y = h.yaw;
-  if (h.mesh.userData.rotor) h.mesh.userData.rotor.rotation.y += dt * 22;
   // keep the spotlight cone pointing at the player
   if (h.mesh.userData.cone) {
     h.mesh.userData.cone.position.set(0, -11, 0);

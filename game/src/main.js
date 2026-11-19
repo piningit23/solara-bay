@@ -254,8 +254,8 @@ function updateCamera(dt, mouse) {
   // forward direction the camera looks along
   const fx = G.onFoot ? Math.sin(camYaw) : Math.sin(G.car.yaw);
   const fz = G.onFoot ? -Math.cos(camYaw) : Math.cos(G.car.yaw);
-  const back = G.coverCam ? 26 : 11;
-  const height = G.coverCam ? 9 : 5;
+  const back = G.camBack || (G.coverCam ? 26 : 11);
+  const height = G.camHeight || (G.coverCam ? 9 : 5);
   const cx = target.x - fx * back;
   const cz = target.z - fz * back;
   const cy = target.y + height;

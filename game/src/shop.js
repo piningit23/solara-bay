@@ -3,7 +3,7 @@
 // upgrades (Racing Tires, Armor Plating, Engine). Cash only, persistent.
 
 import { G } from './state.js';
-import { SHOP_ITEMS, UPGRADES } from './config.js';
+import { SHOP_ITEMS, UPGRADES, WEAPONS } from './config.js';
 import { currentRank } from './respect.js';
 import { saveGame } from './save.js';
 import { playCash, playHit } from './audio.js';
@@ -63,9 +63,8 @@ export function buyItem(id) {
   if (G.cash < item.price) { G.messages.push('Not enough cash for ' + item.name + '.'); playHit(); return false; }
   G.cash -= item.price;
   if (id === 'armor') G.armor = Math.min(100, G.armor + 50);
-  if (id === 'ammo') for (const w of G.weapons) { w.ammo += w.mag * 2; w.mag = w.mag; }
+  if (id === 'ammo') G.weapons.forEach((w, i) => { w.ammo = Math.max(w.ammo, 60); w.mag = WEAPONS[i].mag; });
   if (id === 'repair' && G.car) G.car.hp = 100;
-  if (id === 'ammo') for (const w of G.weapons) w.ammo = Math.max(w.ammo, 60);
   playCash();
   G.messages.push('Bought ' + item.name + ' for $' + item.price + '.');
   saveGame();
